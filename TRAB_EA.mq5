@@ -26,7 +26,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "TRAB"
 #property link        ""
-#property version     "1.04"
+#property version     "1.05"
 #property description "M1 Trend Reversal & Accumulation Breakout EA"
 #property description "Sequential phase state machine: Exhaustion -> Accumulation -> Crossover -> Breakout entry."
 #property description "Runs on the chart symbol. M1 timeframe only."
@@ -72,6 +72,10 @@ input int    InpEmaExitFastPeriod     = 10;      // Exit-cross fast EMA period (
 input int    InpEmaExitSlowPeriod     = 20;      // Exit-cross slow EMA period (EMA20)
 input int    InpEmaExitConfirmBars    = 1;       // Closed bars the adverse cross must hold
 input double InpEmaExitMinProfitRR    = 0.0;     // Min profit (x initial risk) to arm exit (0 = always)
+
+input group "=== Exit Analytics (v1.05) ==="
+input bool   InpExitAnalytics         = true;    // Journal exit-reason stats (R-multiples per exit type)
+input bool   InpExportTradesCSV       = false;   // Append closed-trade records to MQL5\Files\TRAB_exits_<magic>.csv
 
 input group "=== Broker Environment ==="
 input double InpMaxSpreadPips         = 1.5;     // Max live spread (pips) - hard abort gate
@@ -149,6 +153,16 @@ double            g_initialRisk     = 0.0;
 bool              g_trailActive     = false;
 bool              g_crossExitPending = false;          // EMA cross exit fired, close retry in progress
 string            g_gvRiskName      = "";
+double            g_lots            = 0.0;    // tracked position volume (for risk-money calc)
+double            g_riskMoney       = 0.0;    // initial risk in account currency (R reference)
+string            g_exitInitiated   = "";     // "" none | "CROSS" = EA cross-exit close in progress
+
+// exit-reason analytics (v1.05) - per-session, reset on EA reload
+int               g_exCnt[5];               // closes per exit type
+double            g_exSumR[5];              // sum of R-multiples per exit type
+int               g_exWins[5];              // profitable closes per exit type
+int               g_exTotal        = 0;     // total closed trades this session
+double            g_exSumRAll      = 0.0;    // total R this session
 
 // chart background tinting
 bool              g_bgSaved         = false;  // original background captured once
@@ -171,6 +185,87 @@ string StateName(const ENUM_TRAB_STATE s)
       case ST_PRIMED:    return "PRIMED";
      }
    return "IDLE";
+  }
+
+//+------------------------------------------------------------------+
+//| Exit analytics (v1.05): types, risk-money, stats, CSV export     |
+//+------------------------------------------------------------------+
+enum ENUM_EXIT_TYPE
+  {
+   EXIT_TP    = 0,   // fixed take-profit hit
+   EXIT_TRAIL = 1,   // SL hit after trailing activated
+   EXIT_CROSS = 2,   // EMA cross-exit market close
+   EXIT_SL    = 3,   // hard SL hit (trailing never activated)
+   EXIT_OTHER = 4    // manual close / stop-out / unknown
+  };
+#define EXIT_TYPE_COUNT 5
+
+string ExitTypeName(const int t)
+  {
+   switch(t)
+     {
+      case EXIT_TP:    return "TP";
+      case EXIT_TRAIL: return "Trail";
+      case EXIT_CROSS: return "Cross";
+      case EXIT_SL:    return "SL";
+     }
+   return "Other";
+  }
+
+// initial risk converted to account currency for a given volume
+double RiskMoneyFor(const double lots)
+  {
+   if(g_initialRisk <= 0.0 || lots <= 0.0)
+      return 0.0;
+   const double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   const double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tickVal <= 0.0 || tickSize <= 0.0)
+      return 0.0;
+   return g_initialRisk / tickSize * tickVal * lots;
+  }
+
+string ExitStatsString()
+  {
+   string s = StringFormat("%d trade%s, %s%.2fR total", g_exTotal, (g_exTotal == 1 ? "" : "s"),
+                           g_exSumRAll >= 0.0 ? "+" : "", g_exSumRAll);
+   for(int t = 0; t < EXIT_TYPE_COUNT; t++)
+      if(g_exCnt[t] > 0)
+         s += StringFormat(" | %s %d (%s%.2fR, %d%% win)",
+                           ExitTypeName(t), g_exCnt[t], g_exSumR[t] >= 0.0 ? "+" : "", g_exSumR[t],
+                           (int)MathRound(100.0 * g_exWins[t] / g_exCnt[t]));
+   return s;
+  }
+
+void UpdateExitStats(const int type, const double rMult)
+  {
+   g_exCnt[type]++;
+   g_exSumR[type] += rMult;
+   if(rMult > 0.0)
+      g_exWins[type]++;
+   g_exTotal++;
+   g_exSumRAll += rMult;
+   Log("exit stats: " + ExitStatsString());
+  }
+
+// append one closed-trade record to MQL5\Files\TRAB_exits_<magic>.csv
+void ExportClosedTradeCSV(const int type, const double rMult, const double net, const double exitPrice)
+  {
+   const string name = StringFormat("TRAB_exits_%I64d.csv", InpMagicNumber);
+   const int h = FileOpen(name, FILE_READ | FILE_WRITE | FILE_CSV | FILE_ANSI, ';');
+   if(h == INVALID_HANDLE)
+     {
+      Log(StringFormat("exit CSV: cannot open %s (error %d)", name, GetLastError()));
+      return;
+     }
+   if(FileSize(h) == 0)
+      FileWrite(h, "close_time", "symbol", "ticket", "exit_type", "R_multiple",
+                "net_pnl", "currency", "exit_price");
+   FileSeek(h, 0, SEEK_END);
+   FileWrite(h, TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS), _Symbol,
+             StringFormat("%I64u", g_ticket), ExitTypeName(type),
+             DoubleToString(rMult, 3), DoubleToString(net, 2),
+             AccountInfoString(ACCOUNT_CURRENCY), DoubleToString(exitPrice, g_digits));
+   FileClose(h);
   }
 
 //+------------------------------------------------------------------+
@@ -330,6 +425,8 @@ void OnDeinit(const int reason)
    if(g_hSlow2 != INVALID_HANDLE) IndicatorRelease(g_hSlow2);
    if(g_hEmaExitFast != INVALID_HANDLE) IndicatorRelease(g_hEmaExitFast);
    if(g_hEmaExitSlow != INVALID_HANDLE) IndicatorRelease(g_hEmaExitSlow);
+   if(g_exTotal > 0)
+      Log("final exit stats - " + ExitStatsString());
    RestoreBgColor();
    Comment("");
   }
@@ -544,11 +641,14 @@ void AdoptExistingPosition()
      {
       const double open = PositionGetDouble(POSITION_PRICE_OPEN);
       const double sl   = PositionGetDouble(POSITION_SL);
+      g_lots            = PositionGetDouble(POSITION_VOLUME);
       if(GlobalVariableCheck(g_gvRiskName))
          g_initialRisk = GlobalVariableGet(g_gvRiskName);
       else if(sl > 0.0)
          g_initialRisk = MathAbs(open - sl);
      }
+   g_riskMoney        = RiskMoneyFor(g_lots);
+   g_exitInitiated    = "";
    g_trailActive      = false;
    g_crossExitPending = false;
    Log(StringFormat("adopted existing position #%I64u (posID %I64d), initial risk %s",
@@ -830,7 +930,10 @@ void TryEnter(const int dir)
             const double open = PositionGetDouble(POSITION_PRICE_OPEN);
             g_initialRisk = MathAbs(open - slN);
             GlobalVariableSet(g_gvRiskName, g_initialRisk);
+            g_lots = PositionGetDouble(POSITION_VOLUME);
            }
+         g_riskMoney        = RiskMoneyFor(g_lots);
+         g_exitInitiated    = "";
          g_trailActive      = false;
          g_crossExitPending = false;
         }
@@ -927,6 +1030,9 @@ void ManageOpenPosition()
       g_ticket           = 0;
       g_posID            = 0;
       g_initialRisk      = 0.0;
+      g_lots             = 0.0;
+      g_riskMoney        = 0.0;
+      g_exitInitiated    = "";
       g_trailActive      = false;
       g_crossExitPending = false;
       return;
@@ -1059,6 +1165,7 @@ void CheckEmaCrossExit()
      }
 
    // close at market; on failure the pending flag keeps retrying every tick
+   g_exitInitiated = "CROSS";                 // tag for exit-reason classification (v1.05)
    if(g_trade.PositionClose(g_ticket))
      {
       const uint ret = g_trade.ResultRetcode();
@@ -1075,7 +1182,13 @@ void CheckEmaCrossExit()
 //+------------------------------------------------------------------+
 void LogClosedPosition()
   {
-   double net = 0.0;
+   double net        = 0.0;
+   long   exitReason = -1;
+   long   inType     = -1;
+   double openPrice  = 0.0;
+   double exitPxSum  = 0.0;
+   double exitVol    = 0.0;
+
    if(g_posID != 0 && HistorySelectByPosition(g_posID))
      {
       const int deals = HistoryDealsTotal();
@@ -1087,10 +1200,49 @@ void LogClosedPosition()
          net += HistoryDealGetDouble(d, DEAL_PROFIT)
               + HistoryDealGetDouble(d, DEAL_SWAP)
               + HistoryDealGetDouble(d, DEAL_COMMISSION);
+         const long entry = HistoryDealGetInteger(d, DEAL_ENTRY);
+         if(entry == DEAL_ENTRY_IN && openPrice == 0.0)
+           {
+            openPrice = HistoryDealGetDouble(d, DEAL_PRICE);
+            inType    = HistoryDealGetInteger(d, DEAL_TYPE);   // DEAL_TYPE_BUY = long
+           }
+         if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY || entry == DEAL_ENTRY_INOUT)
+           {
+            exitReason  = HistoryDealGetInteger(d, DEAL_REASON);
+            exitPxSum  += HistoryDealGetDouble(d, DEAL_PRICE) * HistoryDealGetDouble(d, DEAL_VOLUME);
+            exitVol    += HistoryDealGetDouble(d, DEAL_VOLUME);
+           }
         }
      }
-   Log(StringFormat("position #%I64u CLOSED - net result %.2f %s",
-                    g_ticket, net, AccountInfoString(ACCOUNT_CURRENCY)));
+
+   // --- classify the exit (v1.05) ---
+   int type = EXIT_OTHER;                                    // manual close / stop-out / unknown
+   if(exitReason == DEAL_REASON_TP)
+      type = EXIT_TP;
+   else if(exitReason == DEAL_REASON_SL)
+      type = (g_trailActive ? EXIT_TRAIL : EXIT_SL);
+   else if(g_exitInitiated == "CROSS" && exitReason == DEAL_REASON_EXPERT)
+      type = EXIT_CROSS;
+
+   // --- R-multiple: money-based when available, else price-based ---
+   double rMult = 0.0;
+   if(g_riskMoney > 0.0)
+      rMult = net / g_riskMoney;
+   else if(g_initialRisk > 0.0 && exitVol > 0.0 && openPrice > 0.0)
+     {
+      const double exitAvg = exitPxSum / exitVol;
+      rMult = ((inType == DEAL_TYPE_BUY ? exitAvg - openPrice : openPrice - exitAvg) / g_initialRisk);
+     }
+
+   Log(StringFormat("position #%I64u CLOSED - exit: %s | net %s%.2fR / %s %s",
+                    g_ticket, ExitTypeName(type),
+                    rMult >= 0.0 ? "+" : "", rMult,
+                    DoubleToString(net, 2), AccountInfoString(ACCOUNT_CURRENCY)));
+
+   if(InpExitAnalytics)
+      UpdateExitStats(type, rMult);
+   if(InpExportTradesCSV)
+      ExportClosedTradeCSV(type, rMult, net, exitVol > 0.0 ? exitPxSum / exitVol : 0.0);
   }
 
 //+------------------------------------------------------------------+
@@ -1109,7 +1261,7 @@ void UpdatePanel()
    else if(g_lastFresh < 0)
       freshTxt = "uptrend-exhausted (short setup)";
 
-   string s = "TRAB EA v1.04 | " + _Symbol + " " + EnumToString(_Period) + "\n";
+   string s = "TRAB EA v1.05 | " + _Symbol + " " + EnumToString(_Period) + "\n";
    if(InpAlertOnly)
       s += ">>> ALERT-ONLY MODE: signals are alerted, NO trades are opened <<<\n";
    if(!g_canTrade)
@@ -1143,6 +1295,9 @@ void UpdatePanel()
                         g_crossExitPending ? "CLOSING" : (InpUseEmaCrossExit ? "armed" : "off"));
    else
       s += "Position: flat\n";
+
+   if(g_exTotal > 0)
+      s += StringFormat("Closed this session: %s\n", ExitStatsString());
 
    Comment(s);
   }

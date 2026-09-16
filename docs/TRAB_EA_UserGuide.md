@@ -1,6 +1,6 @@
 # TRAB EA — User Guide
 
-**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.04** · **Timeframe: M1 only**
+**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.05** · **Timeframe: M1 only**
 Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 
 ---
@@ -36,7 +36,7 @@ Reset conditions (back to IDLE, logged with reason):
 - primed setup expiry (`SetupExpiryBars`),
 - computed SL exceeding `MaxStopLossPips` (trade intentionally skipped).
 
-**Journal tags to know:** `Phase 1 confirmed`, `Phase 2 validated`, `Phase 3 confirmed -> PRIMED`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - net result ...`, `ALERT-ONLY: ...` (v1.04 signal fired instead of an order).
+**Journal tags to know:** `Phase 1 confirmed`, `Phase 2 validated`, `Phase 3 confirmed -> PRIMED`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - exit: TP/Trail/Cross/SL/Other | net ±R` (v1.05 exit classification), `exit stats: ...` (running per-session summary, v1.05), `ALERT-ONLY: ...` (v1.04 signal fired instead of an order).
 
 The state machine is **frozen while a position is open** — one trade at a time per symbol/magic. After the position closes it resumes at IDLE with a fresh evaluation.
 
@@ -119,6 +119,14 @@ Every input with its default, what it controls, and when to change it. The defau
 
 > The panel position line shows `emaX armed / CLOSING / off` so you can see the cross-exit state at a glance.
 
+### Exit Analytics (v1.05)
+| Input | Default | Usage |
+|---|---|---|
+| ExitAnalytics | true | On every close, the EA classifies the exit and logs `position #... CLOSED - exit: TP/Trail/Cross/SL/Other | net +x.xxR / money`, followed by a running per-session summary line `exit stats: ...` (count, total R and win% per exit type). Types: **TP** = fixed take-profit hit · **Trail** = SL hit after trailing activated · **Cross** = EMA10×20 cross-exit market close · **SL** = hard SL (trailing never armed) · **Other** = manual close / stop-out / unknown. R-multiple = net P&L ÷ initial risk in money (falls back to price-distance R if the risk reference is unavailable). Stats are **per session** (reset when the EA is reloaded); a final summary is printed on removal and at the end of a tester run |
+| ExportTradesCSV | false | Also append each close as a row to `MQL5\Files\TRAB_exits_<magic>.csv` (`;`-separated: close time, symbol, ticket, exit type, R-multiple, net P&L, currency, exit price). Header written automatically; safe to open in Excel while the EA runs. Use it after backtests/walk-forwards to analyze the exit mix — e.g. whether Cross exits scratch would-be 2R winners, or the EMA50 trail caps winners near +1R |
+
+> The panel shows a `Closed this session: ...` line whenever at least one trade has closed this session.
+
 ### Broker Environment
 | Input | Default | Usage |
 |---|---|---|
@@ -162,6 +170,7 @@ All colors are ordinary MQL5 `color` inputs — type any `clrXXX` web-color name
 - Suggested starting symbols: EURUSD, GBPUSD, XAUUSD (with `PipSizeOverride = 0.1` for gold if your broker quotes 2/3 digits).
 - Walk-forward the most impactful parameters first: `SqueezeThresholdPips`, `ExhaustionLookbackBars`, `BoxLookbackBars`, `TrailActivateRR` — and since v1.03 also `RiskRewardRatio` and `EmaExitMinProfitRR`.
 - `AlertOnly = true` is a strategy-tester blind spot: MT5 does not execute `Alert()` in the tester, so validate alert-only behavior on a live/demo chart and read the `ALERT-ONLY:` lines in the Experts journal.
+- Enable `ExportTradesCSV` for backtest/walk-forward runs and analyze the exit mix (TP vs Trail vs Cross vs SL and their average R) — this is the key dataset for tuning the exit stack (`EmaExitMinProfitRR`, `TrailBufferPips`, `RiskRewardRatio`).
 - The EA opens **one position at a time** and uses **risk-percent sizing** — backtest results scale with the tester's initial deposit.
 
 ---
@@ -177,6 +186,7 @@ All colors are ordinary MQL5 `color` inputs — type any `clrXXX` web-color name
 | Gold/indices behaving oddly | Set `PipSizeOverride` explicitly (e.g., 0.1 for gold) so pips-based inputs mean what you expect. |
 | Wrong session hours | Decide the time base first: `UseServerTime = true` compares the hour inputs against the chart clock directly (no offset math — e.g. IC Markets real London open 08:00 UK ≈ 10:00 chart time), while `false` treats them as GMT and needs a correct `ServerGMTOffset` (2 winter / 3 summer on IC Markets). To disable sessions entirely set `LondonStartHour = 0` / `LondonEndHour = 23`. |
 | No alerts with `AlertOnly = true` | Alerts fire only where a trade would: inside the session windows, spread ≤ `MaxSpreadPips`, breakout body ≤ `MaxBreakoutCandlePips`, SL ≤ cap. The journal shows `ALERT-ONLY:` / `ENTRY ABORTED:` reasons. Alert popups only appear while the terminal is running, and not at all in the Strategy Tester. |
+| Exit CSV file not created | `ExportTradesCSV` must be `true`; the file appears under `MQL5\Files\TRAB_exits_<magic>.csv` (in the Strategy Tester: under the tester agent's `Files` folder). Check the journal for `exit CSV: cannot open ...` errors. |
 | EA restarted while in a trade | Position is auto-adopted; the initial risk reference is persisted in a terminal Global Variable (`TRAB_<magic>_<ticket>_R`). |
 | Background never tints at all | v1.02 applies the tint on attach — check the journal for `state tinting active`. If missing: (a) the chart is running an older `.ex5` — recompile and re-attach; (b) `ColorizeStates = false`; (c) you are attached to a chart in a **different terminal installation** than the one this source folder belongs to. |
 | Chart background left tinted | The EA restores the original color on removal/recompile. If the terminal crashed while tinted, reattach and remove the EA once — or reset the color via chart **Properties → Colors**. |

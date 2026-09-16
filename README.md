@@ -1,6 +1,6 @@
 # TRAB EA — Trend Reversal & Accumulation Breakout
 
-**M1 Expert Advisor for MetaTrader 5** · Version 1.04
+**M1 Expert Advisor for MetaTrader 5** · Version 1.05
 
 TRAB is a three-phase reversal strategy for M1 charts. It hunts for exhausted trends, waits for an accumulation squeeze, then trades the definitive reversal breakout — with fully rule-based entries, exits, and risk management.
 
@@ -38,6 +38,7 @@ PRIMED ──(M1 candle CLOSES outside the frozen box)──▶ MARKET ORDER
 - ✅ Trailing stop + optional TP removal for extended trends
 - ✅ EMA cross exit (EMA10 × EMA20) with optional profit gate
 - ✅ **Alert-only mode** (`AlertOnly = true`, v1.04): pop-up signal alerts instead of orders — forward-test signals manually
+- ✅ **Exit analytics** (v1.05): every close classified as TP / Trail / Cross / SL / Other with R-multiple, running journal stats + optional CSV export for exit-mix analysis
 - ✅ On-chart status panel + per-state chart background tinting
 - ✅ Auto position adoption after EA restart (initial risk persisted via Global Variable)
 - ✅ Session filter with GMT or broker-server time base
@@ -47,7 +48,7 @@ PRIMED ──(M1 candle CLOSES outside the frozen box)──▶ MARKET ORDER
 ## Installation
 
 1. Copy `TRAB_EA.mq5` to `<Data Folder>\MQL5\Experts\` (or open the folder directly: MetaTrader 5 → *File → Open Data Folder*).
-2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.04, compiled 0 errors / 0 warnings).
+2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.05, compiled 0 errors / 0 warnings).
 3. Attach to an **M1 chart** and enable **Algo Trading**.
 4. Confirm the journal shows: `TRAB: initialized on <SYMBOL> PERIOD_M1 | pip=... | ...`
 
@@ -61,7 +62,7 @@ Prebuilt presets are in [`preset/`](preset/):
 
 ---
 
-## Key Inputs (v1.04)
+## Key Inputs (v1.05)
 
 | Group | Highlights |
 |---|---|
@@ -100,7 +101,7 @@ Entries are gated to the London (08:00–16:59) and New York (13:00–20:59) win
 ```
 TRAB-EA/
 ├── TRAB_EA.mq5                     # Full source (MQL5)
-├── TRAB_EA.ex5                     # Prebuilt v1.04 (drop into MQL5\Experts)
+├── TRAB_EA.ex5                     # Prebuilt v1.05 (drop into MQL5\Experts)
 ├── docs/
 │   ├── TRAB_EA_Proposal.md         # Formal spec & decision log
 │   └── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting
