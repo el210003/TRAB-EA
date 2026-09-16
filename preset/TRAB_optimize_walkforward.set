@@ -1,41 +1,36 @@
 ; =====================================================================
-; TRAB EA v1.00 - WALK-FORWARD OPTIMIZATION TEMPLATE
-; Optimizes the four most impactful parameters (per proposal §4):
-;   SqueezeThresholdPips, ExhaustionLookbackBars, BoxLookbackBars,
-;   TrailActivateRR
-; All other inputs are held at signed-off baseline values (N flags).
-;
-; Usage: Strategy Tester -> Inputs tab -> Load this file -> select
-;        "Optimization: Fast genetic based on real ticks" (or slow full
-;        scan; grid below is small enough for a full pass).
-; Criterion suggestion: Balance + max Profit Factor or custom.
-; Reject any parameter set whose edge disappears out-of-sample.
-;
-; Format per line: value||start||step||stop||optimize(Y/N)
-; Grid size: 9 x 7 x 10 x 5 = 3,150 passes.
+; TRAB EA v1.08 - WALK-FORWARD OPTIMIZATION SET
+; Tester settings: Symbol = chart symbol under test | Period = M1
+;                  Model = "Every tick based on real ticks"
+; Optimized grid (700 passes): SweepMaxBars x RiskRewardRatio x
+; TrailActivateRR x EmaExitMinProfitRR - the four most impactful
+; parameters of the v1.08 machine.
 ; =====================================================================
 InpFastEma1Period=20||20||0||0||N
 InpFastEma2Period=50||50||0||0||N
 InpSlowEma1Period=150||150||0||0||N
 InpSlowEma2Period=200||200||0||0||N
-InpExhaustionLookbackBars=60||40||10||100||Y
-InpBoxLookbackBars=45||30||5||75||Y
-InpSqueezeThresholdPips=5.0||2.0||1.0||10.0||Y
-InpSqueezeLookbackBars=3||3||0||0||N
-InpCrossConfirmBars=2||2||0||0||N
-InpExhaustionMaxBars=240||240||0||0||N
-InpAccumulationMaxBars=60||60||0||0||N
+InpSweepMaxBars=12||6||2||24||Y
+InpPricePurityTouch=true||true||0||0||N
 InpSetupExpiryBars=20||20||0||0||N
 InpMaxBreakoutCandlePips=20.0||20.0||0.0||0.0||N
 InpSLBoxBufferPips=1.0||1.0||0.0||0.0||N
 InpSLEmaBufferPips=2.0||2.0||0.0||0.0||N
+InpSLDeeperWins=false||false||0||0||N
 InpMaxStopLossPips=30.0||30.0||0.0||0.0||N
-InpRiskRewardRatio=1.5||1.5||0.0||0.0||N
+InpRiskRewardRatio=2.0||1.5||0.5||3.0||Y
 InpRiskPercent=1.0||1.0||0.0||0.0||N
 InpFixedLots=0.10||0.10||0.0||0.0||N
 InpTrailActivateRR=1.0||0.8||0.2||1.6||Y
 InpTrailBufferPips=1.0||1.0||0.0||0.0||N
 InpRemoveTPWhenTrailing=false||false||0||0||N
+InpUseEmaCrossExit=true||true||0||0||N
+InpEmaExitFastPeriod=10||10||0||0||N
+InpEmaExitSlowPeriod=20||20||0||0||N
+InpEmaExitConfirmBars=1||1||0||0||N
+InpEmaExitMinProfitRR=0.0||0.0||0.25||1.0||Y
+InpExitAnalytics=true||true||0||0||N
+InpExportTradesCSV=false||false||0||0||N
 InpMaxSpreadPips=1.5||1.5||0.0||0.0||N
 InpMaxSlippagePips=1.0||1.0||0.0||0.0||N
 InpLondonStartHour=8||8||0||0||N
@@ -46,6 +41,7 @@ InpUseServerTime=false||false||0||0||N
 InpServerGMTOffset=2||2||0||0||N
 InpMagicNumber=20250915||20250915||0||0||N
 InpTradeComment=TRAB
+InpAlertOnly=false||false||0||0||N
 InpEnforceM1Only=true||true||0||0||N
 InpPipSizeOverride=0.0||0.0||0.0||0.0||N
 InpShowPanel=false||false||0||0||N

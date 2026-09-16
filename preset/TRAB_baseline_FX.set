@@ -1,32 +1,35 @@
 ; =====================================================================
-; TRAB EA v1.00 - BASELINE BACKTEST SET (5-digit FX: EURUSD / GBPUSD / etc.)
+; TRAB EA v1.08 - BASELINE BACKTEST SET (5-digit FX: EURUSD / GBPUSD / etc.)
 ; Tester settings: Symbol = chart symbol under test | Period = M1
 ;                  Model = "Every tick based on real ticks"
 ; Pip size auto-detected (10 x point). Risk = 1% equity per trade.
-; See TRAB_EA_Proposal.md (spec) and TRAB_EA_UserGuide.md (reference).
+; v1.08 machine: Stack -> Crack -> Sweep -> Breakout. See UserGuide.
 ; =====================================================================
 InpFastEma1Period=20
 InpFastEma2Period=50
 InpSlowEma1Period=150
 InpSlowEma2Period=200
-InpExhaustionLookbackBars=60
-InpBoxLookbackBars=45
-InpSqueezeThresholdPips=5.0
-InpSqueezeLookbackBars=3
-InpCrossConfirmBars=2
-InpExhaustionMaxBars=240
-InpAccumulationMaxBars=60
+InpSweepMaxBars=12
+InpPricePurityTouch=true
 InpSetupExpiryBars=20
 InpMaxBreakoutCandlePips=20.0
 InpSLBoxBufferPips=1.0
 InpSLEmaBufferPips=2.0
+InpSLDeeperWins=false
 InpMaxStopLossPips=30.0
-InpRiskRewardRatio=1.5
+InpRiskRewardRatio=2.0
 InpRiskPercent=1.0
 InpFixedLots=0.10
 InpTrailActivateRR=1.0
 InpTrailBufferPips=1.0
 InpRemoveTPWhenTrailing=false
+InpUseEmaCrossExit=true
+InpEmaExitFastPeriod=10
+InpEmaExitSlowPeriod=20
+InpEmaExitConfirmBars=1
+InpEmaExitMinProfitRR=0.0
+InpExitAnalytics=true
+InpExportTradesCSV=false
 InpMaxSpreadPips=1.5
 InpMaxSlippagePips=1.0
 InpLondonStartHour=8
@@ -37,6 +40,7 @@ InpUseServerTime=false
 InpServerGMTOffset=2
 InpMagicNumber=20250915
 InpTradeComment=TRAB
+InpAlertOnly=false
 InpEnforceM1Only=true
 InpPipSizeOverride=0.0
 InpShowPanel=false

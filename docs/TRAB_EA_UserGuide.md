@@ -1,6 +1,6 @@
 # TRAB EA — User Guide
 
-**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.07** · **Timeframe: M1 only**
+**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.08** · **Timeframe: M1 only**
 Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 
 ---
@@ -22,24 +22,30 @@ Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 ## 2. How It Trades (State Machine)
 
 ```
-IDLE ──(60 closed bars with fast band fully on one side)──▶ TRENDING
-TRENDING ──(4-EMA squeeze < threshold)──▶ ACCUMULATION
-ACCUMULATION ──(EMA20+EMA50 fully crossed to reversal side for N bars)──▶ PRIMED
-PRIMED ──(M1 candle CLOSES outside the frozen box, in reversal direction)──▶ MARKET ORDER
+IDLE ──(full EMA stack forms: E20>E50>E150>E200, or reverse)──▶ TRENDING
+TRENDING ──(EMA20 crosses EMA50 against the stack = "crack")──▶ ACCUMULATION
+ACCUMULATION ──(EMA20 sweeps beyond EMA150 AND EMA200 within SweepMaxBars)──▶ PRIMED
+PRIMED ──(M1 candle CLOSES beyond the frozen box, in sweep direction)──▶ MARKET ORDER
                                              (or an MT5 Alert, with AlertOnly = true)
 ```
 
-> **Terminology (v1.07):** Phase 1 was originally called "Exhaustion". It does **not** detect exhaustion — it certifies that a **mature trend is in place**; exhaustion evidence arrives later (squeeze → crossover → breakout). The state is therefore displayed as `TRENDING`. Input identifiers keep the historical `Exhaustion...` names for `.set`-file compatibility.
+> **v1.08 machine:** a pure **EMA-configuration** tracker with EMA20 as the protagonist. No history windows, no squeeze: a state *is* the current EMA configuration, and each transition is the next EMA relationship breaking or forming. **Price purity** guards the whole setup — from the bar after the crack until entry, price must never touch EMA20 (touch mode, default) or close beyond it (relaxed mode); any violation invalidates the sweep *even after EMA20 has crossed EMA200*.
+
+**The three EMA relationships, in order:**
+1. **Stack intact** (TRENDING) — trend exists; follow or do nothing
+2. **EMA20/EMA50 flip** (→ ACCUMULATION, the "crack") — momentum broken; box window opens (price range from the crack bar until just before the EMA20/EMA150 cross)
+3. **EMA20 beyond all other EMAs** (→ PRIMED, the "sweep") — reversal confirmed by momentum; box frozen; entry on a close beyond the box edge
 
 Reset conditions (back to IDLE, logged with reason):
-- trending/accumulation waits exceed their staleness caps,
-- the fast band returns to the original trend side without crossing,
-- **while PRIMED: the fast band recrosses back into the slow band (v1.06)** — the reversal premise is dead; without this guard a stale setup could fire an entry against the EA's own trend definition,
+- **price touches/crosses EMA20 against the sweep** (purity violation, v1.08) — at any point from the crack to entry,
+- **EMA20 re-crosses EMA50 back to the trend side** (crack healed → TRENDING if the full stack restored, else IDLE; while PRIMED this is an outright invalidation),
+- **sweep too slow** — EMA20 did not get beyond all other EMAs within `SweepMaxBars` bars of the crack,
+- the EMA stack breaks in a way that is not an EMA20/50 crack (e.g. EMA50/EMA150 warp while EMA20/50 hold) — structure unclear → IDLE,
 - a wrong-side breakout, or a close back inside the box after a breakout,
 - primed setup expiry (`SetupExpiryBars`),
 - computed SL exceeding `MaxStopLossPips` (trade intentionally skipped).
 
-**Journal tags to know:** `Phase 1 confirmed`, `Phase 2 validated`, `Phase 3 confirmed -> PRIMED`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - exit: TP/Trail/Cross/SL/Other | net ±R` (v1.05 exit classification), `exit stats: ...` (running per-session summary, v1.05), `ALERT-ONLY: ...` (v1.04 signal fired instead of an order), `fast band recrossed - reversal premise invalid` (v1.06 primed-setup guard).
+**Journal tags to know:** `Phase 1 stack confirmed`, `Phase 2 crack`, `box frozen at the EMA20/EMA150 cross`, `Phase 3 sweep complete`, `price touched/crossed EMA20 ... invalid`, `crack healed`, `sweep too slow`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - exit: TP/Trail/Cross/SL/Other | net ±R` (v1.05 exit classification), `exit stats: ...` (running per-session summary, v1.05), `ALERT-ONLY: ...` (v1.04 signal fired instead of an order).
 
 The state machine is **frozen while a position is open** — one trade at a time per symbol/magic. After the position closes it resumes at IDLE with a fresh evaluation.
 
@@ -50,7 +56,7 @@ For peripheral-vision awareness, the EA tints the chart background as the state 
 | State | Default background color | Meaning at a glance |
 |---|---|---|
 | IDLE | unchanged (`clrNONE`) | nothing happening |
-| TRENDING | `clrSaddleBrown` (amber/brown) | Phase 1 armed — mature trend in place, waiting for squeeze/crossover evidence |
+| TRENDING | `clrSaddleBrown` (amber/brown) | Phase 1 armed — full EMA stack in place, waiting for the crack |
 | ACCUMULATION | `clrMidnightBlue` (dark blue) | Phase 2 validated — waiting for the band crossover |
 | PRIMED (long setup) | `clrDarkGreen` | box frozen — waiting for the bullish breakout close |
 | PRIMED (short setup) | `clrDarkRed` | box frozen — waiting for the bearish breakout close |
@@ -74,23 +80,18 @@ Every input with its default, what it controls, and when to change it. The defau
 ### Indicators
 | Input | Default | Usage |
 |---|---|---|
-| FastEma1Period | 20 | Leading edge of the fast momentum band. Present in **every** phase check: band separation (Phase 1), 4-EMA squeeze width (Phase 2), crossover confirmation (Phase 3). Lower = earlier but noisier signals. |
+| FastEma1Period | 20 | EMA20 — the protagonist of the v1.08 machine: its position relative to every other EMA defines all states and transitions. Lower = earlier but noisier signals. |
 | FastEma2Period | 50 | Confirmation EMA of the fast band — **and the trailing-stop reference**: after the 1:1 mark the SL trails `TrailBufferPips` behind this EMA. Changing it changes trailing behavior too. |
 | SlowEma1Period | 150 | Inner macro-band EMA. Together with EMA200 it defines "the trend side" in Phases 1/3 and forms the entry SL cluster. |
-| SlowEma2Period | 200 | Outer macro-band EMA — the trend boundary the reversal must cross. Part of the deeper-wins SL cluster. |
+| SlowEma2Period | 200 | Outer macro-band EMA — the last line the sweep must cross (EMA20 beyond E200 completes PRIMED). Part of the SL cluster. |
 
 > These four periods define the strategy's geometry. If you experiment, keep the fast/slow proportions (20/50 vs 150/200) roughly intact — otherwise expect fundamentally different behavior.
 
-### Phase Detection
+### Phase Machine (v1.08)
 | Input | Default | Usage |
 |---|---|---|
-| ExhaustionLookbackBars | 60 | Phase 1: both fast EMAs must sit entirely above (or below) both slow EMAs for this many **consecutive closed bars** — i.e. a mature trend must pre-exist. Raise = rarer, more mature trends required; lower = more, earlier and riskier setups. Minimum 5. |
-| BoxLookbackBars | 45 | Phase 2: lookback for the consolidation box (highest high / lowest low) frozen when the setup primes. The box defines the breakout trigger and the box-edge SL. Bigger = wider boxes → wider SLs → more SL-cap skips. Minimum 5. |
-| SqueezeThresholdPips | 5.0 | Phase 2 validation: the average distance between the highest and lowest of the 4 EMAs must be below this (in pips). Scale with the symbol's volatility; assumes a correct pip definition (see `PipSizeOverride`). |
-| SqueezeLookbackBars | 3 | Bars averaged for the squeeze measurement. 1 = instant snapshot (noisy); higher = smoother but lags. Minimum 1. |
-| CrossConfirmBars | 2 | Phase 3: closed bars the fast band must remain fully on the reversal side before the cross counts as definitive. Raise = fewer false crossovers, later entries. Minimum 1. |
-| ExhaustionMaxBars | 240 | Staleness cap for the TRENDING state. The in-state counter resets while the original separation still holds, so a healthy trend extends the wait; the cap fires only once separation is lost and no squeeze has formed. |
-| AccumulationMaxBars | 60 | Same cap for ACCUMULATION while waiting for the crossover. On expiry the machine resets to IDLE and re-arms from scratch. |
+| SweepMaxBars | 12 | Max bars from the crack (EMA20/50 flip) to full sweep completion (EMA20 beyond E150 **and** E200). Encodes "very quick momentum": sweeps that take longer are discarded. Raise = accepts slower, grinding reversals; lower = only waterfall-style sweeps. Minimum 1. |
+| PricePurityTouch | true | Validity rule: from the bar after the crack until entry, price must stay one-sided vs EMA20. `true` = **any touch** (wick reaching EMA20) invalidates the sweep — purest momentum filter; `false` = only a **close** beyond EMA20 invalidates. Applies in ACCUMULATION and PRIMED, even after EMA20 has crossed EMA200 |
 
 ### Entry
 | Input | Default | Usage |
@@ -102,7 +103,7 @@ Every input with its default, what it controls, and when to change it. The defau
 | Input | Default | Usage |
 |---|---|---|
 | SLBoxBufferPips | 1.0 | Initial SL distance beyond the opposite box edge. |
-| SLEmaBufferPips | 2.0 | SL distance beyond the EMA150/200 cluster. Whichever level is **deeper** (box edge vs EMA cluster) wins, giving the trade the more defensive stop. |
+| SLEmaBufferPips | 2.0 | SL distance beyond the EMA150/200 cluster. With `SLDeeperWins = false` (v1.08 default) the **nearer** of box edge / EMA cluster is the stop — after a sweep the cluster usually gives the sane distance; the hard `MaxStopLossPips` cap still applies. |
 | MaxStopLossPips | 30 | Hard SL cap. If the box + EMA geometry needs more, the trade is skipped and the setup reset — the EA never stretches risk to force a trade. Raise consciously on volatile symbols. |
 | RiskRewardRatio | 2.0 | Fixed take-profit = RR × initial risk (2.0 = 1:2). Interacts with trailing: after the 1:1 mark the trail or the EMA-cross exit can close the trade before the TP. |
 | RiskPercent | 1.0 | Position sized so a full-SL loss ≈ this % of current **equity**. Volume is floored to the lot step, capped at the symbol max, and margin-checked (limited to 90 % of free margin). `0` = switch to FixedLots. |
@@ -135,7 +136,7 @@ Every input with its default, what it controls, and when to change it. The defau
 |---|---|---|
 | MaxSpreadPips | 1.5 | Live spread measured at the entry moment; above this the entry aborts (setup stays primed for retry). M1 entries are spread-sensitive — keep tight on FX majors. |
 | MaxSlippagePips | 1.0 | Max deviation for the market order. **Hard-clamped to 3.0** in code regardless of the input. |
-| LondonStartHour / LondonEndHour | 8 / 16 | London window, end hour inclusive → 08:00–16:59. Gates Phase-1 arming, squeeze validation, crossover priming **and** the breakout entry. |
+| LondonStartHour / LondonEndHour | 8 / 16 | London window, end hour inclusive → 08:00–16:59. Gates the breakout entry (state tracking itself runs 24 h under the v1.08 configuration machine). |
 | NYStartHour / NYEndHour | 13 / 20 | New York window, end hour inclusive → 13:00–20:59. Together with London (overlap 13–16) the gate is effectively 08:00–20:59. To run 24 h: `LondonStartHour = 0`, `LondonEndHour = 23`. |
 | UseServerTime | false | Which clock the hour inputs refer to. `false` = hours are **GMT**: the EA converts the chart's server clock with `ServerGMTOffset` before comparing. `true` = hours are compared **directly against the chart clock** (broker server time) and `ServerGMTOffset` is ignored — simplest, and stable relative to what you see on screen. |
 | ServerGMTOffset | 2 | Broker's server offset from GMT, used only when `UseServerTime = false`. IC Markets: 2 in winter, 3 during US DST — verify by comparing the Market Watch clock with GMT. |
@@ -150,7 +151,7 @@ Session filter gates **priming and entry only** — open positions are still man
 | AlertOnly | false | **Signal mode (v1.04).** `false` = open trades normally. `true` = no orders are ever sent: at a valid breakout the EA raises an MT5 **Alert** (popup + sound, journal line `ALERT-ONLY: ...`) with direction, entry, SL, TP, risk and RR, then resets to IDLE — one alert per setup, no spam. All entry gates (spread, session, spike filter, SL cap) still run, so each alert matches exactly what would have been traded. Note: MT5 does **not** execute `Alert()` in the Strategy Tester — validate this mode on a live/demo chart. |
 | EnforceM1Only | true | Hard M1 guard: on any other timeframe the EA warns in the journal and disables evaluation/trading. The phase geometry is M1-specific — leave `true` unless you deliberately re-purpose the phases to a bigger bar size. |
 | PipSizeOverride | 0.0 | Pip size in price units for **all** `-Pips` inputs. `0` = auto: 10×point on 3/5-digit quotes, else 1×point. Set `0.1` for XAUUSD-style quoting if auto gives wrong pip values (symptom: `TRADE SKIPPED: SL cap` on every trade). |
-| ShowPanel | true | On-chart status panel (state, frozen box, squeeze, spread, session, position, alert-mode banner). `false` = clean chart; the journal still logs everything. |
+| ShowPanel | true | On-chart status panel (state, crack/box/sweep progress, EMA stack, spread, session, position, alert-mode banner). `false` = clean chart; the journal still logs everything. |
 
 ### State Colors (chart background tint)
 | Input | Default | Usage |
@@ -171,7 +172,7 @@ All colors are ordinary MQL5 `color` inputs — type any `clrXXX` web-color name
 - Strategy Tester mode: **"Every tick based on real ticks"** (M1 logic + per-tick trailing require it). "1 minute OHLC" is acceptable only for smoke tests.
 - Test on the chart symbol you intend to trade; download at least 12 months of M1 tick data.
 - Suggested starting symbols: EURUSD, GBPUSD, XAUUSD (with `PipSizeOverride = 0.1` for gold if your broker quotes 2/3 digits).
-- Walk-forward the most impactful parameters first: `SqueezeThresholdPips`, `ExhaustionLookbackBars`, `BoxLookbackBars`, `TrailActivateRR` — and since v1.03 also `RiskRewardRatio` and `EmaExitMinProfitRR`.
+- Walk-forward the most impactful parameters first: `SweepMaxBars`, `RiskRewardRatio`, `TrailActivateRR`, `EmaExitMinProfitRR` — the preset `TRAB_optimize_walkforward.set` ships exactly this 700-pass grid.
 - `AlertOnly = true` is a strategy-tester blind spot: MT5 does not execute `Alert()` in the tester, so validate alert-only behavior on a live/demo chart and read the `ALERT-ONLY:` lines in the Experts journal.
 - Enable `ExportTradesCSV` for backtest/walk-forward runs and analyze the exit mix (TP vs Trail vs Cross vs SL and their average R) — this is the key dataset for tuning the exit stack (`EmaExitMinProfitRR`, `TrailBufferPips`, `RiskRewardRatio`).
 - The EA opens **one position at a time** and uses **risk-percent sizing** — backtest results scale with the tester's initial deposit.
