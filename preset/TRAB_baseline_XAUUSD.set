@@ -1,0 +1,44 @@
+; =====================================================================
+; TRAB EA v1.00 - BASELINE BACKTEST SET (XAUUSD / GOLD)
+; PipSizeOverride = 0.1  ->  1 "pip" = a $0.10 move in gold.
+; Thresholds are scaled for gold volatility as STARTING HYPOTHESES:
+;   squeeze 8 pips = $0.80 | SL cap 60 pips = $6.00 | spike filter 50 pips = $5.00
+;   spread gate 3 pips = $0.30 (tighten to ~2.0 on raw-spread accounts)
+; Validate every one of these in the backtest before trusting them.
+; Tester settings: Period = M1 | Model = "Every tick based on real ticks"
+; =====================================================================
+InpFastEma1Period=20
+InpFastEma2Period=50
+InpSlowEma1Period=150
+InpSlowEma2Period=200
+InpExhaustionLookbackBars=60
+InpBoxLookbackBars=45
+InpSqueezeThresholdPips=8.0
+InpSqueezeLookbackBars=3
+InpCrossConfirmBars=2
+InpExhaustionMaxBars=240
+InpAccumulationMaxBars=60
+InpSetupExpiryBars=20
+InpMaxBreakoutCandlePips=50.0
+InpSLBoxBufferPips=1.0
+InpSLEmaBufferPips=3.0
+InpMaxStopLossPips=60.0
+InpRiskRewardRatio=1.5
+InpRiskPercent=1.0
+InpFixedLots=0.10
+InpTrailActivateRR=1.0
+InpTrailBufferPips=1.0
+InpRemoveTPWhenTrailing=false
+InpMaxSpreadPips=3.0
+InpMaxSlippagePips=1.0
+InpLondonStartHour=8
+InpLondonEndHour=16
+InpNYStartHour=13
+InpNYEndHour=20
+InpUseServerTime=false
+InpServerGMTOffset=2
+InpMagicNumber=20250915
+InpTradeComment=TRAB
+InpEnforceM1Only=true
+InpPipSizeOverride=0.1
+InpShowPanel=false
