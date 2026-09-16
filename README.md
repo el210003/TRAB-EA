@@ -1,6 +1,6 @@
 # TRAB EA — Trend Reversal & Accumulation Breakout
 
-**M1 Expert Advisor for MetaTrader 5** · Version 1.08
+**M1 Expert Advisor for MetaTrader 5** · Version 1.09
 
 TRAB is a three-phase reversal strategy for M1 charts, built as a **pure EMA-configuration state machine with EMA20 as the protagonist**: it locks onto trending EMA stacks, waits for the momentum crack, then trades the confirmed reversal sweep — with fully rule-based entries, exits, and risk management.
 
@@ -14,7 +14,7 @@ TRAB is a three-phase reversal strategy for M1 charts, built as a **pure EMA-con
 IDLE ──(full EMA stack forms: E20>E50>E150>E200, or reverse)──▶ TRENDING
 TRENDING ──(EMA20 crosses EMA50 against the stack = crack)──▶ ACCUMULATION
 ACCUMULATION ──(EMA20 sweeps beyond EMA150 AND EMA200 within SweepMaxBars)──▶ PRIMED
-PRIMED ──(M1 candle CLOSES beyond the frozen box)──▶ MARKET ORDER
+PRIMED ──(price retests EMA150 and prints a pin bar)──▶ MARKET ORDER
                                                        (or an Alert with AlertOnly = true)
 ```
 
@@ -22,10 +22,10 @@ PRIMED ──(M1 candle CLOSES beyond the frozen box)──▶ MARKET ORDER
 |---|---|
 | **1 · Trend** | Full EMA stack — EMA20>EMA50>EMA150>EMA200 (or reverse) on closed bars. A state *is* the configuration: no history windows, no maturity test |
 | **2 · Crack** | EMA20 crosses EMA50 against the stack — momentum broken. The box = price range from the crack bar until just before the EMA20/EMA150 cross. **Price purity:** price must never touch EMA20 while the setup lives |
-| **3 · Sweep** | EMA20 sweeps beyond EMA150 **and** EMA200 within `SweepMaxBars` bars of the crack — quick-momentum reversal confirmed; box frozen |
-| **Entry** | First M1 candle **close** beyond the frozen box, in the sweep direction |
+| **3 · Sweep** | EMA20 sweeps beyond EMA150 **and** EMA200 within `SweepMaxBars` bars of the crack — quick-momentum reversal confirmed |
+| **Entry** | Price **retests EMA150** and prints a **pin bar** (rejection wick ≥ `PinWickRatio` × body, closing back on the sweep side) — SL beyond the pin's extreme. Failed retest / no pin → back to ACCUMULATION for a fresh cycle |
 
-**Exits:** SL = **nearer** of box edge / EMA150/200 cluster (+buffer; legacy deeper-wins optional), fixed TP at 1:2 RR, trailing stop behind EMA50 after the 1:1 mark, plus an EMA10/EMA20 adverse-cross profit-protection exit.
+**Exits:** SL beyond the pin-bar extreme (+buffer), fixed TP at 1:2 RR, trailing stop behind EMA50 after the 1:1 mark, plus an EMA10/EMA20 adverse-cross profit-protection exit.
 
 **Safety gates:** spread cap, London/NY session windows, breakout-candle spike filter, hard SL cap, slippage cap, margin-checked position sizing, one position at a time per symbol/magic.
 
@@ -48,7 +48,7 @@ PRIMED ──(M1 candle CLOSES beyond the frozen box)──▶ MARKET ORDER
 ## Installation
 
 1. Copy `TRAB_EA.mq5` to `<Data Folder>\MQL5\Experts\` (or open the folder directly: MetaTrader 5 → *File → Open Data Folder*).
-2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.08, compiled 0 errors / 0 warnings).
+2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.09, compiled 0 errors / 0 warnings).
 3. Attach to an **M1 chart** and enable **Algo Trading**.
 4. Confirm the journal shows: `TRAB: initialized on <SYMBOL> PERIOD_M1 | pip=... | ...`
 
@@ -67,7 +67,7 @@ Prebuilt presets are in [`preset/`](preset/):
 | Group | Highlights |
 |---|---|
 | Indicators | EMA 20/50 fast band · EMA 150/200 macro band |
-| Phase Machine | `SweepMaxBars` quick-momentum window (crack → sweep ≤ 12 bars) · price-purity rule (no EMA20 touch) |
+| Phase Machine | `SweepMaxBars` quick-momentum window (crack → sweep ≤ 12 bars) · sweep price-purity rule (no EMA20 touch) · `PinWickRatio` pin-bar definition for the EMA150 retest |
 | Entry | 20-bar primed setup lifetime · 20-pip breakout-candle spike filter |
 | Risk & Exits | 1% equity risk (0 = fixed 0.10 lots) · 1:2 RR · 30-pip SL cap · EMA50 trailing from 1:1 |
 | EMA Cross Exit | EMA10×EMA20 adverse-cross close, optional min-profit gate |
@@ -101,7 +101,7 @@ Entries are gated to the London (08:00–16:59) and New York (13:00–20:59) win
 ```
 TRAB-EA/
 ├── TRAB_EA.mq5                     # Full source (MQL5)
-├── TRAB_EA.ex5                     # Prebuilt v1.08 (drop into MQL5\Experts)
+├── TRAB_EA.ex5                     # Prebuilt v1.09 (drop into MQL5\Experts)
 ├── docs/
 │   ├── TRAB_EA_Proposal.md         # Formal spec & decision log
 │   └── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting

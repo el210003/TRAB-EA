@@ -5,7 +5,7 @@ Guidance for AI coding agents working in this repository.
 ## Project Overview
 
 **TRAB EA** — a MetaTrader 5 Expert Advisor (MQL5) implementing a three-phase reversal
-strategy on M1 charts: Trend (EMA stack in place) → Crack (EMA20/50 flip) → Sweep (EMA20 beyond all EMAs) → Breakout entry.
+strategy on M1 charts: Trend (EMA stack in place) → Crack (EMA20/50 flip) → Sweep (EMA20 beyond all EMAs) → Retest entry (EMA150 retest + pin bar).
 Single-file EA (`TRAB_EA.mq5`), no external dependencies beyond the standard library
 (`<Trade\Trade.mqh>`).
 

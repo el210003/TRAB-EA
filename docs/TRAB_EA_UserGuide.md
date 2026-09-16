@@ -25,27 +25,26 @@ Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 IDLE ──(full EMA stack forms: E20>E50>E150>E200, or reverse)──▶ TRENDING
 TRENDING ──(EMA20 crosses EMA50 against the stack = "crack")──▶ ACCUMULATION
 ACCUMULATION ──(EMA20 sweeps beyond EMA150 AND EMA200 within SweepMaxBars)──▶ PRIMED
-PRIMED ──(M1 candle CLOSES beyond the frozen box, in sweep direction)──▶ MARKET ORDER
+PRIMED ──(price retests EMA150 and prints a pin bar)──▶ MARKET ORDER
                                              (or an MT5 Alert, with AlertOnly = true)
 ```
 
-> **v1.08 machine:** a pure **EMA-configuration** tracker with EMA20 as the protagonist. No history windows, no squeeze: a state *is* the current EMA configuration, and each transition is the next EMA relationship breaking or forming. **Price purity** guards the whole setup — from the bar after the crack until entry, price must never touch EMA20 (touch mode, default) or close beyond it (relaxed mode); any violation invalidates the sweep *even after EMA20 has crossed EMA200*.
+> **v1.09 entry:** after the sweep completes, the EA waits for price to **retest EMA150** and print a **pin bar** there (rejection wick ≥ `PinWickRatio` × body, closing back on the sweep side). That pin bar is the entry — SL beyond the pin's extreme. A **failed retest** (close beyond EMA150) or a **retest without a pin bar** sends the machine back to ACCUMULATION to await a fresh crack→sweep cycle. **Sweep purity** (no EMA20 touch) applies only until the sweep completes — the retest phase *expects* price to travel back through EMA20.
 
 **The three EMA relationships, in order:**
 1. **Stack intact** (TRENDING) — trend exists; follow or do nothing
-2. **EMA20/EMA50 flip** (→ ACCUMULATION, the "crack") — momentum broken; box window opens (price range from the crack bar until just before the EMA20/EMA150 cross)
-3. **EMA20 beyond all other EMAs** (→ PRIMED, the "sweep") — reversal confirmed by momentum; box frozen; entry on a close beyond the box edge
+2. **EMA20/EMA50 flip** (→ ACCUMULATION, the "crack") — momentum broken; awaiting the sweep
+3. **EMA20 beyond all other EMAs** (→ PRIMED, the "sweep") — reversal confirmed by momentum; now waiting for the EMA150 retest + pin bar entry
 
 Reset conditions (back to IDLE, logged with reason):
-- **price touches/crosses EMA20 against the sweep** (purity violation, v1.08) — at any point from the crack to entry,
-- **EMA20 re-crosses EMA50 back to the trend side** (crack healed → TRENDING if the full stack restored, else IDLE; while PRIMED this is an outright invalidation),
-- **sweep too slow** — EMA20 did not get beyond all other EMAs within `SweepMaxBars` bars of the crack,
+- **price touches/crosses EMA20 against the sweep** (purity violation) — until the sweep completes;
+- **EMA20 re-crosses EMA50 back to the trend side** (crack healed → TRENDING if the full stack restored, else IDLE; while PRIMED this means the sweep is undone),
+- **sweep too slow / too many failed retests** — the whole crack→sweep→retest lifecycle is bounded by `SweepMaxBars` bars since the crack,
 - the EMA stack breaks in a way that is not an EMA20/50 crack (e.g. EMA50/EMA150 warp while EMA20/50 hold) — structure unclear → IDLE,
-- a wrong-side breakout, or a close back inside the box after a breakout,
-- primed setup expiry (`SetupExpiryBars`),
+- **retest window expired** — no pin-bar entry within `SetupExpiryBars` bars of the sweep,
 - computed SL exceeding `MaxStopLossPips` (trade intentionally skipped).
 
-**Journal tags to know:** `Phase 1 stack confirmed`, `Phase 2 crack`, `box frozen at the EMA20/EMA150 cross`, `Phase 3 sweep complete`, `price touched/crossed EMA20 ... invalid`, `crack healed`, `sweep too slow`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - exit: TP/Trail/Cross/SL/Other | net ±R` (v1.05 exit classification), `exit stats: ...` (running per-session summary, v1.05), `ALERT-ONLY: ...` (v1.04 signal fired instead of an order).
+**Journal tags to know:** `Phase 1 stack confirmed`, `Phase 2 crack`, `Phase 3 sweep complete`, `retest failed: price closed beyond EMA150 -> ACCUMULATION`, `EMA150 retested without a pin bar -> ACCUMULATION`, `EMA150 retest with bullish/bearish pin bar -> entry`, `price touched/crossed EMA20 ... invalid`, `crack healed`, `sweep too slow`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - exit: TP/Trail/Cross/SL/Other | net ±R` (v1.05 exit classification), `exit stats: ...` (running per-session summary, v1.05), `ALERT-ONLY: ...` (v1.04 signal fired instead of an order).
 
 The state machine is **frozen while a position is open** — one trade at a time per symbol/magic. After the position closes it resumes at IDLE with a fresh evaluation.
 
@@ -58,8 +57,8 @@ For peripheral-vision awareness, the EA tints the chart background as the state 
 | IDLE | unchanged (`clrNONE`) | nothing happening |
 | TRENDING | `clrSaddleBrown` (amber/brown) | Phase 1 armed — full EMA stack in place, waiting for the crack |
 | ACCUMULATION | `clrMidnightBlue` (dark blue) | Phase 2 validated — waiting for the band crossover |
-| PRIMED (long setup) | `clrDarkGreen` | box frozen — waiting for the bullish breakout close |
-| PRIMED (short setup) | `clrDarkRed` | box frozen — waiting for the bearish breakout close |
+| PRIMED (long setup) | `clrDarkGreen` | sweep done — waiting for the EMA150 retest + bullish pin |
+| PRIMED (short setup) | `clrDarkRed` | sweep done — waiting for the EMA150 retest + bearish pin |
 
 Behavior details:
 
@@ -90,21 +89,21 @@ Every input with its default, what it controls, and when to change it. The defau
 ### Phase Machine (v1.08)
 | Input | Default | Usage |
 |---|---|---|
-| SweepMaxBars | 12 | Max bars from the crack (EMA20/50 flip) to full sweep completion (EMA20 beyond E150 **and** E200). Encodes "very quick momentum": sweeps that take longer are discarded. Raise = accepts slower, grinding reversals; lower = only waterfall-style sweeps. Minimum 1. |
-| PricePurityTouch | true | Validity rule: from the bar after the crack until entry, price must stay one-sided vs EMA20. `true` = **any touch** (wick reaching EMA20) invalidates the sweep — purest momentum filter; `false` = only a **close** beyond EMA20 invalidates. Applies in ACCUMULATION and PRIMED, even after EMA20 has crossed EMA200 |
+| SweepMaxBars | 12 | Max bars from the crack (EMA20/50 flip) to full sweep completion (EMA20 beyond E150 **and** E200). Encodes "very quick momentum". **Also bounds retest attempts**: each failed retest / no-pin retest cycles back through ACCUMULATION, and the whole crack→sweep→retest lifecycle must fit within this many bars. Minimum 1. |
+| PricePurityTouch | true | **Sweep purity** (applies until the sweep completes, i.e. pre-PRIMED only): from the bar after the crack, price must stay one-sided vs EMA20. `true` = **any touch** (wick reaching EMA20) invalidates the sweep; `false` = only a **close** beyond EMA20 does. After PRIMED this rule is off — the retest phase expects price to travel back through EMA20 |
+| PinWickRatio | 2.0 | Pin-bar definition at the EMA150 retest: the rejection wick (upper wick for a short, lower wick for a long) must be ≥ this ratio × the candle body, and the close must be in the rejection half of the candle. Raise = demand purer rejections; lower = accept shallower pins |
 
 ### Entry
 | Input | Default | Usage |
 |---|---|---|
-| SetupExpiryBars | 20 | Lifetime of a PRIMED setup (box stays frozen). If no qualifying breakout close occurs within this many bars the setup is discarded. |
+| SetupExpiryBars | 20 | Retest-watch lifetime after the sweep completes: if no pin-bar retest entry occurs within this many bars, the setup is discarded. Each failed retest / no-pin retest cycles through ACCUMULATION (within the `SweepMaxBars` lifecycle bound) and re-arms a fresh watch |
 | MaxBreakoutCandlePips | 20 | Spike filter: if the closed breakout candle's body exceeds this many pips the entry aborts — **the setup stays primed** and retries on a later bar. Shields entries from news spikes at extreme prices. |
 
 ### Risk & Exits
 | Input | Default | Usage |
 |---|---|---|
-| SLBoxBufferPips | 1.0 | Initial SL distance beyond the opposite box edge. |
-| SLEmaBufferPips | 2.0 | SL distance beyond the EMA150/200 cluster. With `SLDeeperWins = false` (v1.08 default) the **nearer** of box edge / EMA cluster is the stop — after a sweep the cluster usually gives the sane distance; the hard `MaxStopLossPips` cap still applies. |
-| MaxStopLossPips | 30 | Hard SL cap. If the box + EMA geometry needs more, the trade is skipped and the setup reset — the EA never stretches risk to force a trade. Raise consciously on volatile symbols. |
+| PinBufferPips | 1.0 | SL distance beyond the pin-bar extreme (the rejection wick) — the wick that failed to break the level is the risk. The hard `MaxStopLossPips` cap still applies. |
+| MaxStopLossPips | 30 | Hard SL cap. If the pin-bar geometry needs more, the trade is skipped and the setup reset — the EA never stretches risk to force a trade. Raise consciously on volatile symbols. |
 | RiskRewardRatio | 2.0 | Fixed take-profit = RR × initial risk (2.0 = 1:2). Interacts with trailing: after the 1:1 mark the trail or the EMA-cross exit can close the trade before the TP. |
 | RiskPercent | 1.0 | Position sized so a full-SL loss ≈ this % of current **equity**. Volume is floored to the lot step, capped at the symbol max, and margin-checked (limited to 90 % of free margin). `0` = switch to FixedLots. |
 | FixedLots | 0.10 | Volume used only when `RiskPercent = 0`. For very small accounts or pure signal testing. |
@@ -151,7 +150,7 @@ Session filter gates **priming and entry only** — open positions are still man
 | AlertOnly | false | **Signal mode (v1.04).** `false` = open trades normally. `true` = no orders are ever sent: at a valid breakout the EA raises an MT5 **Alert** (popup + sound, journal line `ALERT-ONLY: ...`) with direction, entry, SL, TP, risk and RR, then resets to IDLE — one alert per setup, no spam. All entry gates (spread, session, spike filter, SL cap) still run, so each alert matches exactly what would have been traded. Note: MT5 does **not** execute `Alert()` in the Strategy Tester — validate this mode on a live/demo chart. |
 | EnforceM1Only | true | Hard M1 guard: on any other timeframe the EA warns in the journal and disables evaluation/trading. The phase geometry is M1-specific — leave `true` unless you deliberately re-purpose the phases to a bigger bar size. |
 | PipSizeOverride | 0.0 | Pip size in price units for **all** `-Pips` inputs. `0` = auto: 10×point on 3/5-digit quotes, else 1×point. Set `0.1` for XAUUSD-style quoting if auto gives wrong pip values (symptom: `TRADE SKIPPED: SL cap` on every trade). |
-| ShowPanel | true | On-chart status panel (state, crack/box/sweep progress, EMA stack, spread, session, position, alert-mode banner). `false` = clean chart; the journal still logs everything. |
+| ShowPanel | true | On-chart status panel (state, crack/sweep/retest progress, EMA stack, spread, session, position, alert-mode banner). `false` = clean chart; the journal still logs everything. |
 
 ### State Colors (chart background tint)
 | Input | Default | Usage |
@@ -185,7 +184,7 @@ All colors are ordinary MQL5 `color` inputs — type any `clrXXX` web-color name
 |---|---|
 | No trades for long stretches | Normal: all 3 phases + session + spread gates must align. Check journal for `Phase 1/2/3` messages to see how far setups get. |
 | Many `ENTRY ABORTED: spread` | Spread gate doing its job on M1; consider a symbol/account with tighter spreads, or review `MaxSpreadPips`. |
-| Many `TRADE SKIPPED: SL cap` | Frozen box + EMA cluster geometry too wide for `MaxStopLossPips`. Expected on volatile symbols — raise the cap consciously or reduce box lookback. |
+| Many `TRADE SKIPPED: SL cap` | Pin-bar + buffer geometry too wide for `MaxStopLossPips` (e.g. a very long rejection wick). Expected on volatile symbols — raise the cap consciously. |
 | Zero volume computed | `RiskPercent` sizing produced lots below the symbol minimum → trade skipped by design (risk control). Use `FixedLots` mode on very small accounts. |
 | Gold/indices behaving oddly | Set `PipSizeOverride` explicitly (e.g., 0.1 for gold) so pips-based inputs mean what you expect. |
 | Wrong session hours | Decide the time base first: `UseServerTime = true` compares the hour inputs against the chart clock directly (no offset math — e.g. IC Markets real London open 08:00 UK ≈ 10:00 chart time), while `false` treats them as GMT and needs a correct `ServerGMTOffset` (2 winter / 3 summer on IC Markets). To disable sessions entirely set `LondonStartHour = 0` / `LondonEndHour = 23`. |

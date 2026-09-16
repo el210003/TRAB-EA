@@ -1,5 +1,5 @@
 ; =====================================================================
-; TRAB EA v1.08 - BASELINE BACKTEST SET (XAUUSD / gold)
+; TRAB EA v1.09 - BASELINE BACKTEST SET (XAUUSD / gold)
 ; Tester settings: Symbol = chart symbol under test | Period = M1
 ;                  Model = "Every tick based on real ticks"
 ; Pip = 0.1 (PipSizeOverride). Looser spread/SL caps for metal volatility.
@@ -11,11 +11,10 @@ InpSlowEma1Period=150
 InpSlowEma2Period=200
 InpSweepMaxBars=12
 InpPricePurityTouch=true
+InpPinWickRatio=2.0
 InpSetupExpiryBars=20
+InpPinBufferPips=1.0
 InpMaxBreakoutCandlePips=50.0
-InpSLBoxBufferPips=1.0
-InpSLEmaBufferPips=3.0
-InpSLDeeperWins=false
 InpMaxStopLossPips=60.0
 InpRiskRewardRatio=2.0
 InpRiskPercent=1.0

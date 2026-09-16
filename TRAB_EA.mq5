@@ -14,21 +14,21 @@
 //|                            price must never touch EMA20 (purity)  |
 //| Phase 3 (Sweep)          : EMA20 sweeps beyond EMA150 AND EMA200  |
 //|                            within SweepMaxBars of the crack       |
-//| Entry                    : M1 candle CLOSE beyond the frozen box  |
-//| Exit                     : SL = NEARER of box edge / EMA150/200  |
-//|                            cluster (+buffer) unless DeeperWins,   |
-//|                            fixed TP at 1:2 RR, trailing behind    |
-//|                            EMA50 after the 1:1 mark, plus         |
-//|                            EMA10/EMA20 adverse-cross exit         |
+//| Entry                    : retest of EMA150 with a pin bar;       |
+//|                            failed retest / no pin -> ACCUMULATION |
+//| Exit                     : SL = pin-bar extreme +/- buffer, fixed |
+//|                            TP at 1:2 RR, trailing behind EMA50    |
+//|                            after the 1:1 mark, plus EMA10/EMA20   |
+//|                            adverse-cross exit                     |
 //| Safety                   : spread gate, session gate, slippage   |
 //|                            cap, breakout-candle spike filter,    |
 //|                            hard SL cap                           |
 //+------------------------------------------------------------------+
 #property copyright   "TRAB"
 #property link        ""
-#property version     "1.08"
+#property version     "1.09"
 #property description "M1 Trend Reversal & Accumulation Breakout EA"
-#property description "Sequential EMA-configuration state machine: Stack -> Crack -> Sweep -> Breakout entry."
+#property description "Sequential EMA-configuration state machine: Stack -> Crack -> Sweep -> Retest entry."
 #property description "Runs on the chart symbol. M1 timeframe only."
 
 #include <Trade\Trade.mqh>
@@ -42,18 +42,17 @@ input int    InpFastEma2Period        = 50;      // Fast EMA 2 period (confirmat
 input int    InpSlowEma1Period        = 150;     // Slow EMA 1 period (macro band inner)
 input int    InpSlowEma2Period        = 200;     // Slow EMA 2 period (macro band outer)
 
-input group "=== Phase Machine (v1.08) ==="
-input int    InpSweepMaxBars          = 12;      // Max bars from crack (EMA20/50 cross) to full sweep
-input bool   InpPricePurityTouch      = true;    // true = any touch of EMA20 kills the sweep; false = close beyond only
+input group "=== Phase Machine (v1.09) ==="
+input int    InpSweepMaxBars          = 12;      // Max bars from crack to sweep; bounds retest attempts too
+input bool   InpPricePurityTouch      = true;    // Sweep purity: touch of EMA20 (vs close) invalidates
+input double InpPinWickRatio          = 2.0;     // Pin bar: rejection wick >= ratio x body
 
 input group "=== Entry ==="
 input int    InpSetupExpiryBars       = 20;      // Primed setup lifetime (bars, frozen box)
 input double InpMaxBreakoutCandlePips = 20.0;    // Max entry-candle body (pips) - spike filter
 
 input group "=== Risk & Exits ==="
-input double InpSLBoxBufferPips       = 1.0;     // SL buffer beyond box edge (pips)
-input double InpSLEmaBufferPips       = 2.0;     // SL buffer beyond EMA150/200 cluster (pips)
-input bool   InpSLDeeperWins          = false;   // false = NEARER of box edge / EMA cluster wins (v1.08); true = legacy deeper-wins
+input double InpPinBufferPips         = 1.0;     // SL buffer beyond the pin-bar extreme (pips)
 input double InpMaxStopLossPips       = 30.0;    // Hard SL cap (pips) - trade skipped if exceeded
 input double InpRiskRewardRatio       = 2.0;     // Fixed TP = RR x initial risk (1:2)
 input double InpRiskPercent           = 1.0;     // Risk % of equity per trade (0 = use FixedLots)
@@ -106,8 +105,8 @@ enum ENUM_TRAB_STATE
   {
    ST_IDLE       = 0,  // no EMA stack - do nothing
    ST_TRENDING   = 1,  // full EMA stack in place (EMA20>EMA50>EMA150>EMA200 or reverse)
-   ST_ACCUM      = 2,  // crack: EMA20/EMA50 flipped against the stack - box window open
-   ST_PRIMED     = 3   // EMA20 swept beyond all other EMAs - box frozen, waiting for breakout close
+   ST_ACCUM      = 2,  // crack: EMA20/EMA50 flipped against the stack - awaiting sweep (or re-formation)
+   ST_PRIMED     = 3   // EMA20 swept beyond all other EMAs - waiting for the EMA150 retest + pin bar
   };
 
 //+------------------------------------------------------------------+
@@ -131,9 +130,10 @@ bool              g_canTrade        = false;
 ENUM_TRAB_STATE   g_state           = ST_IDLE;
 int               g_dir             = 0;      // +1 long setup anticipated, -1 short setup
 int               g_stateBars       = 0;
-double            g_boxTop          = 0.0;
-double            g_boxBottom       = 0.0;
-bool              g_brokenOut       = false;
+bool              g_awaitRecrack    = false;  // PRIMED failed/no-pin: waiting for a fresh crack (v1.09)
+bool              g_sweptOnce       = false;  // sweep completed this setup (purity scope flag)
+double            g_pinHigh         = 0.0;    // pin-bar high at the EMA150 retest (SL reference)
+double            g_pinLow          = 0.0;    // pin-bar low at the EMA150 retest (SL reference)
 datetime          g_lastBarTime     = 0;
 
 // bar-close data cache (index 0 = last CLOSED candle)
@@ -146,10 +146,6 @@ double            g_e200            = 0.0;    // last closed EMA200 (panel displ
 
 // crack / box-window / sweep tracking (v1.08)
 int               g_crackBars       = 0;      // bars since the crack (EMA20/50 flip), valid in ACCUM
-double            g_boxTopRun       = 0.0;    // running box high while the window is open
-double            g_boxBotRun       = 0.0;    // running box low while the window is open
-bool              g_sweepE150       = false;  // EMA20 has crossed EMA150 against the trend (box frozen)
-bool              g_boxFrozen       = false;  // box window closed and frozen at the EMA20/EMA150 cross
 
 // open-position bookkeeping
 ulong             g_ticket          = 0;
@@ -356,9 +352,10 @@ int OnInit()
    // --- input validation ------------------------------------------------
    if(InpFastEma1Period <= 0 || InpFastEma2Period <= 0 ||
       InpSlowEma1Period <= 0 || InpSlowEma2Period <= 0 ||
-      InpSweepMaxBars        <  1 || InpRiskRewardRatio   <= 0 ||
-      InpMaxStopLossPips     <= 0 || InpRiskPercent       <  0 ||
-      InpFixedLots           <= 0 || InpMaxSpreadPips     <= 0 ||
+      InpSweepMaxBars        <  1 || InpPinWickRatio      <= 0 ||
+      InpRiskRewardRatio     <= 0 || InpMaxStopLossPips   <= 0 ||
+      InpRiskPercent         <  0 || InpFixedLots         <= 0 ||
+      InpMaxSpreadPips       <= 0 ||
       InpSetupExpiryBars     <  1 || InpTrailActivateRR   <= 0 ||
       InpEmaExitFastPeriod   <= 0 || InpEmaExitSlowPeriod <= 0 ||
       InpEmaExitConfirmBars  <  1 || InpEmaExitMinProfitRR <  0)
@@ -402,10 +399,13 @@ int OnInit()
    AdoptExistingPosition();
 
    // --- reset state ------------------------------------------------------
-   g_state     = ST_IDLE;
-   g_dir       = 0;
-   g_stateBars = 0;
-   g_brokenOut = false;
+   g_state        = ST_IDLE;
+   g_dir          = 0;
+   g_stateBars    = 0;
+   g_awaitRecrack = false;
+   g_sweptOnce    = false;
+   g_pinHigh      = 0.0;
+   g_pinLow       = 0.0;
    g_crossExitPending = false;
 
    Log(StringFormat("initialized on %s %s | pip=%s | deviation=%u pts | magic=%I64d | risk=%.2f%%%s",
@@ -526,15 +526,14 @@ void ResetToIdle(const string reason)
   {
    if(g_state != ST_IDLE)
       Log(StringFormat("state %s -> IDLE (%s)", StateName(g_state), reason));
-   g_state     = ST_IDLE;
-   g_dir       = 0;
-   g_stateBars = 0;
-   g_boxTop    = 0.0;
-   g_boxBottom = 0.0;
-   g_brokenOut = false;
-   g_boxFrozen = false;
-   g_sweepE150 = false;
-   g_crackBars = 0;
+   g_state        = ST_IDLE;
+   g_dir          = 0;
+   g_stateBars    = 0;
+   g_awaitRecrack = false;
+   g_sweptOnce    = false;
+   g_pinHigh      = 0.0;
+   g_pinLow       = 0.0;
+   g_crackBars    = 0;
   }
 
 //+------------------------------------------------------------------+
@@ -646,14 +645,12 @@ void EvaluateOnBarClose()
 
          if(!stackHolds && crack)
            {
-            g_state      = ST_ACCUM;
-            g_stateBars  = 0;
-            g_crackBars  = 0;
-            g_boxFrozen  = false;
-            g_sweepE150  = false;
-            g_boxTopRun  = hi;                  // box window opens at the crack bar
-            g_boxBotRun  = lo;
-            Log(StringFormat("Phase 2 crack: EMA20 crossed %s EMA50 -> ACCUMULATION | box window open",
+            g_state        = ST_ACCUM;
+            g_stateBars    = 0;
+            g_crackBars    = 0;
+            g_awaitRecrack = false;
+            g_sweptOnce    = false;
+            Log(StringFormat("Phase 2 crack: EMA20 crossed %s EMA50 -> ACCUMULATION",
                              g_dir > 0 ? "above" : "below"));
             break;
            }
@@ -667,8 +664,9 @@ void EvaluateOnBarClose()
         {
          g_crackBars++;
 
-         // price purity from the bar after the crack onward (v1.08)
-         if(PurityViolated(g_dir, hi, lo, cl, e20))
+         // sweep purity applies until the sweep completes (v1.09 scope: pre-PRIMED only -
+         // the retest phase EXPECTS price to travel back through EMA20)
+         if(!g_sweptOnce && PurityViolated(g_dir, hi, lo, cl, e20))
            {
             ResetToIdle("price touched/crossed EMA20 - sweep impure");
             break;
@@ -677,23 +675,6 @@ void EvaluateOnBarClose()
          const bool beyondE50  = (g_dir > 0) ? (e20 > e50)  : (e20 < e50);
          const bool beyondE150 = (g_dir > 0) ? (e20 > e150) : (e20 < e150);
          const bool beyondE200 = (g_dir > 0) ? (e20 > e200) : (e20 < e200);
-
-         // box freezes at the EMA20/EMA150 cross (window: crack bar .. the bar before)
-         if(!g_sweepE150 && beyondE150)
-           {
-            g_sweepE150 = true;
-            g_boxFrozen = true;
-            g_boxTop    = g_boxTopRun;
-            g_boxBottom = g_boxBotRun;
-            Log(StringFormat("box frozen at the EMA20/EMA150 cross (%d crack bars): %s .. %s",
-                             g_crackBars, DoubleToString(g_boxBottom, g_digits),
-                             DoubleToString(g_boxTop, g_digits)));
-           }
-         else if(!g_boxFrozen)
-           {
-            g_boxTopRun = MathMax(g_boxTopRun, hi);
-            g_boxBotRun = MathMin(g_boxBotRun, lo);
-           }
 
          // Phase 3 sweep complete: EMA20 beyond ALL other EMAs
          if(beyondE50 && beyondE150 && beyondE200)
@@ -705,10 +686,9 @@ void EvaluateOnBarClose()
               }
             g_state     = ST_PRIMED;
             g_stateBars = 0;
-            g_brokenOut = false;
-            Log(StringFormat("Phase 3 sweep complete: EMA20 beyond all EMAs after %d bars -> PRIMED | box %s .. %s",
-                             g_crackBars, DoubleToString(g_boxBottom, g_digits),
-                             DoubleToString(g_boxTop, g_digits)));
+            g_sweptOnce = true;
+            Log(StringFormat("Phase 3 sweep complete: EMA20 beyond all EMAs after %d bars -> PRIMED | waiting for the EMA150 retest",
+                             g_crackBars));
             break;
            }
 
@@ -735,38 +715,57 @@ void EvaluateOnBarClose()
       // --------------------------------------------------------------
       case ST_PRIMED:
         {
-         // purity guards the setup until entry - even after the sweep completed (v1.08):
-         // if price touches/crosses EMA20, the momentum premise is dead
-         if(PurityViolated(g_dir, hi, lo, cl, e20))
-           {
-            ResetToIdle("price touched/crossed EMA20 - primed setup invalid");
-            break;
-           }
-         // backstop: EMA20 re-crossing EMA50 back to the trend side
+         // v1.09: entry = retest of EMA150 with a pin bar in the sweep direction.
+         // Price is EXPECTED to travel back through EMA20 here, so the purity
+         // rule no longer applies; the retest rules take over.
+
+         // sweep undone: fast pair back to the trend side
          const bool e20Realigned = (g_dir > 0) ? (e20 < e50) : (e20 > e50);
          if(e20Realigned)
            {
-            ResetToIdle("EMA20 re-crossed EMA50 - primed setup invalid");
+            ResetToIdle("EMA20 re-crossed EMA50 - sweep undone");
             break;
            }
 
-         const bool broke     = (g_dir > 0) ? (cl > g_boxTop)    : (cl < g_boxBottom);
-         const bool wrongSide = (g_dir > 0) ? (cl < g_boxBottom) : (cl > g_boxTop);
+         const bool failClose = (g_dir > 0) ? (cl < e150) : (cl > e150);   // level recaptured
+         const bool touched   = (g_dir > 0) ? (lo <= e150) : (hi >= e150); // price back at EMA150
+         const bool held      = (g_dir > 0) ? (cl > e150)    : (cl < e150);// closed on the sweep side
 
-         if(broke || wrongSide)
-            g_brokenOut = true;
-
-         if(broke)
-            TryEnter(g_dir);
-         else if(wrongSide)
+         if(failClose)
            {
-            ResetToIdle("wrong-side breakout - setup invalidated");
+            g_state        = ST_ACCUM;          // retest failed -> back to accumulation (v1.09)
+            g_awaitRecrack = true;
+            g_stateBars    = 0;
+            Log("retest failed: price closed beyond EMA150 -> ACCUMULATION");
             break;
            }
-         else if(g_brokenOut)
+
+         if(touched && held)
            {
-            ResetToIdle("price closed back inside the box (failed breakout)");
-            break;
+            const double op        = g_rates[0].open;
+            const double body      = MathAbs(cl - op);
+            const double upperWick = hi - MathMax(cl, op);
+            const double lowerWick = MathMin(cl, op) - lo;
+            const bool   pin       = (g_dir > 0)
+                                     ? (lowerWick >= InpPinWickRatio * body && cl > (hi + lo) / 2.0)
+                                     : (upperWick >= InpPinWickRatio * body && cl < (hi + lo) / 2.0);
+            g_pinHigh = hi;
+            g_pinLow  = lo;
+
+            if(pin)
+              {
+               Log(StringFormat("EMA150 retest with %s pin bar -> entry",
+                                g_dir > 0 ? "bullish" : "bearish"));
+               TryEnter(g_dir);
+              }
+            else
+              {
+               g_state        = ST_ACCUM;      // no pin bar -> back to accumulation (v1.09)
+               g_awaitRecrack = true;
+               g_stateBars    = 0;
+               Log("EMA150 retested without a pin bar -> ACCUMULATION");
+               break;
+              }
            }
 
          if(g_ticket != 0)                       // entry executed inside TryEnter
@@ -779,7 +778,7 @@ void EvaluateOnBarClose()
 
          g_stateBars++;
          if(g_stateBars >= InpSetupExpiryBars)
-            ResetToIdle("primed setup expired");
+            ResetToIdle("retest window expired without an entry");
          break;
         }
      }
@@ -809,11 +808,11 @@ void TryEnter(const int dir)
       return;
      }
 
-   // --- gate 3: breakout candle spike filter (the closed breakout candle) -----
+   // --- gate 3: entry-candle spike filter (the pin bar) -----------------------
    const double bodyPips = MathAbs(g_rates[0].close - g_rates[0].open) / g_pip;
    if(bodyPips > InpMaxBreakoutCandlePips)
      {
-      Log(StringFormat("ENTRY ABORTED: breakout candle body %.1f pips > max %.1f pips",
+      Log(StringFormat("ENTRY ABORTED: entry-candle body %.1f pips > max %.1f pips",
                        bodyPips, InpMaxBreakoutCandlePips));
       return;
      }
@@ -829,26 +828,20 @@ void TryEnter(const int dir)
 
    const double minDist = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * g_point;
 
-   // --- SL: NEARER of box edge / EMA150/200 cluster wins (v1.08) -------------
-   // with sweep-based priming the trend extreme is inside the box window,
-   // so the deeper stop would fail the SL cap; InpSLDeeperWins=true restores
-   // the legacy deeper-wins behavior.
+   // --- SL: beyond the pin-bar extreme (v1.09) --------------------------------
+   // the entry is the EMA150-retest pin bar; its rejection wick is the risk.
    double entry, sl, risk;
    if(dir > 0)
      {
-      entry      = tick.ask;
-      const double slBox = g_boxBottom - PipToPrice(InpSLBoxBufferPips);
-      const double slEma = MathMin(g_s1[0], g_s2[0]) - PipToPrice(InpSLEmaBufferPips);
-      sl   = InpSLDeeperWins ? MathMin(slBox, slEma) : MathMax(slBox, slEma);
-      risk = entry - sl;
+      entry = tick.ask;
+      sl    = g_pinLow - PipToPrice(InpPinBufferPips);
+      risk  = entry - sl;
      }
    else
      {
-      entry      = tick.bid;
-      const double slBox = g_boxTop + PipToPrice(InpSLBoxBufferPips);
-      const double slEma = MathMax(g_s1[0], g_s2[0]) + PipToPrice(InpSLEmaBufferPips);
-      sl   = InpSLDeeperWins ? MathMax(slBox, slEma) : MathMin(slBox, slEma);
-      risk = sl - entry;
+      entry = tick.bid;
+      sl    = g_pinHigh + PipToPrice(InpPinBufferPips);
+      risk  = sl - entry;
      }
 
    if(risk <= 0.0)
@@ -1260,16 +1253,12 @@ void UpdatePanel()
    s += "\n";
 
    if(g_state == ST_ACCUM)
-      s += StringFormat("Crack: %d bars ago | box: %s | E20 beyond E150: %s\n",
+      s += StringFormat("Crack: %d bars ago | swept: %s | awaiting: %s\n",
                         g_crackBars,
-                        g_boxFrozen ? StringFormat("frozen %s .. %s",
-                                      DoubleToString(g_boxBottom, g_digits),
-                                      DoubleToString(g_boxTop, g_digits)) : "open (running)",
-                        g_sweepE150 ? "yes" : "no");
+                        g_sweptOnce ? "yes" : "no",
+                        g_awaitRecrack ? "fresh crack" : "sweep completion");
    if(g_state == ST_PRIMED)
-      s += StringFormat("Frozen box: %s .. %s | bars to expiry: %d/%d | purity: clean\n",
-                        DoubleToString(g_boxBottom, g_digits),
-                        DoubleToString(g_boxTop, g_digits),
+      s += StringFormat("EMA150 retest armed | bars to expiry: %d/%d\n",
                         g_stateBars, InpSetupExpiryBars);
 
    s += StringFormat("EMA stack: %s\n", stackTxt);

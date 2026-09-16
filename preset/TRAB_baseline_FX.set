@@ -1,5 +1,5 @@
 ; =====================================================================
-; TRAB EA v1.08 - BASELINE BACKTEST SET (5-digit FX: EURUSD / GBPUSD / etc.)
+; TRAB EA v1.09 - BASELINE BACKTEST SET (5-digit FX: EURUSD / GBPUSD / etc.)
 ; Tester settings: Symbol = chart symbol under test | Period = M1
 ;                  Model = "Every tick based on real ticks"
 ; Pip size auto-detected (10 x point). Risk = 1% equity per trade.
@@ -11,11 +11,10 @@ InpSlowEma1Period=150
 InpSlowEma2Period=200
 InpSweepMaxBars=12
 InpPricePurityTouch=true
+InpPinWickRatio=2.0
 InpSetupExpiryBars=20
+InpPinBufferPips=1.0
 InpMaxBreakoutCandlePips=20.0
-InpSLBoxBufferPips=1.0
-InpSLEmaBufferPips=2.0
-InpSLDeeperWins=false
 InpMaxStopLossPips=30.0
 InpRiskRewardRatio=2.0
 InpRiskPercent=1.0

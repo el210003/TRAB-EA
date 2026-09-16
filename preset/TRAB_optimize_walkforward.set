@@ -1,10 +1,10 @@
 ; =====================================================================
-; TRAB EA v1.08 - WALK-FORWARD OPTIMIZATION SET
+; TRAB EA v1.09 - WALK-FORWARD OPTIMIZATION SET
 ; Tester settings: Symbol = chart symbol under test | Period = M1
 ;                  Model = "Every tick based on real ticks"
-; Optimized grid (700 passes): SweepMaxBars x RiskRewardRatio x
+; Optimized grid (700 passes): PinWickRatio x SweepMaxBars x
 ; TrailActivateRR x EmaExitMinProfitRR - the four most impactful
-; parameters of the v1.08 machine.
+; parameters of the v1.09 machine.
 ; =====================================================================
 InpFastEma1Period=20||20||0||0||N
 InpFastEma2Period=50||50||0||0||N
@@ -12,11 +12,10 @@ InpSlowEma1Period=150||150||0||0||N
 InpSlowEma2Period=200||200||0||0||N
 InpSweepMaxBars=12||6||2||24||Y
 InpPricePurityTouch=true||true||0||0||N
+InpPinWickRatio=2.0||1.5||0.5||3.0||Y
 InpSetupExpiryBars=20||20||0||0||N
+InpPinBufferPips=1.0||1.0||0.0||0.0||N
 InpMaxBreakoutCandlePips=20.0||20.0||0.0||0.0||N
-InpSLBoxBufferPips=1.0||1.0||0.0||0.0||N
-InpSLEmaBufferPips=2.0||2.0||0.0||0.0||N
-InpSLDeeperWins=false||false||0||0||N
 InpMaxStopLossPips=30.0||30.0||0.0||0.0||N
 InpRiskRewardRatio=2.0||1.5||0.5||3.0||Y
 InpRiskPercent=1.0||1.0||0.0||0.0||N
