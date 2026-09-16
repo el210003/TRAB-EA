@@ -1,6 +1,6 @@
 # TRAB EA — User Guide
 
-**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.08** · **Timeframe: M1 only**
+**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.09** · **Timeframe: M1 only**
 Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 
 ---
@@ -56,7 +56,7 @@ For peripheral-vision awareness, the EA tints the chart background as the state 
 |---|---|---|
 | IDLE | unchanged (`clrNONE`) | nothing happening |
 | TRENDING | `clrSaddleBrown` (amber/brown) | Phase 1 armed — full EMA stack in place, waiting for the crack |
-| ACCUMULATION | `clrMidnightBlue` (dark blue) | Phase 2 validated — waiting for the band crossover |
+| ACCUMULATION | `clrMidnightBlue` (dark blue) | crack happened (EMA20/50 flipped) — awaiting the sweep (or re-formation) |
 | PRIMED (long setup) | `clrDarkGreen` | sweep done — waiting for the EMA150 retest + bullish pin |
 | PRIMED (short setup) | `clrDarkRed` | sweep done — waiting for the EMA150 retest + bearish pin |
 
@@ -79,14 +79,14 @@ Every input with its default, what it controls, and when to change it. The defau
 ### Indicators
 | Input | Default | Usage |
 |---|---|---|
-| FastEma1Period | 20 | EMA20 — the protagonist of the v1.08 machine: its position relative to every other EMA defines all states and transitions. Lower = earlier but noisier signals. |
+| FastEma1Period | 20 | EMA20 — the protagonist of the machine: its position relative to every other EMA defines all states and transitions. Lower = earlier but noisier signals. |
 | FastEma2Period | 50 | Confirmation EMA of the fast band — **and the trailing-stop reference**: after the 1:1 mark the SL trails `TrailBufferPips` behind this EMA. Changing it changes trailing behavior too. |
 | SlowEma1Period | 150 | Inner macro-band EMA. Together with EMA200 it defines "the trend side" in Phases 1/3 and forms the entry SL cluster. |
 | SlowEma2Period | 200 | Outer macro-band EMA — the last line the sweep must cross (EMA20 beyond E200 completes PRIMED). Part of the SL cluster. |
 
 > These four periods define the strategy's geometry. If you experiment, keep the fast/slow proportions (20/50 vs 150/200) roughly intact — otherwise expect fundamentally different behavior.
 
-### Phase Machine (v1.08)
+### Phase Machine (v1.08–v1.09)
 | Input | Default | Usage |
 |---|---|---|
 | SweepMaxBars | 12 | Max bars from the crack (EMA20/50 flip) to full sweep completion (EMA20 beyond E150 **and** E200). Encodes "very quick momentum". **Also bounds retest attempts**: each failed retest / no-pin retest cycles back through ACCUMULATION, and the whole crack→sweep→retest lifecycle must fit within this many bars. Minimum 1. |
@@ -97,7 +97,7 @@ Every input with its default, what it controls, and when to change it. The defau
 | Input | Default | Usage |
 |---|---|---|
 | SetupExpiryBars | 20 | Retest-watch lifetime after the sweep completes: if no pin-bar retest entry occurs within this many bars, the setup is discarded. Each failed retest / no-pin retest cycles through ACCUMULATION (within the `SweepMaxBars` lifecycle bound) and re-arms a fresh watch |
-| MaxBreakoutCandlePips | 20 | Spike filter: if the closed breakout candle's body exceeds this many pips the entry aborts — **the setup stays primed** and retries on a later bar. Shields entries from news spikes at extreme prices. |
+| MaxBreakoutCandlePips | 20 | Spike filter: if the entry (pin) candle's body exceeds this many pips the entry aborts — **the setup stays primed** and retries on a later bar. Shields entries from news spikes at extreme prices. |
 
 ### Risk & Exits
 | Input | Default | Usage |
@@ -135,7 +135,7 @@ Every input with its default, what it controls, and when to change it. The defau
 |---|---|---|
 | MaxSpreadPips | 1.5 | Live spread measured at the entry moment; above this the entry aborts (setup stays primed for retry). M1 entries are spread-sensitive — keep tight on FX majors. |
 | MaxSlippagePips | 1.0 | Max deviation for the market order. **Hard-clamped to 3.0** in code regardless of the input. |
-| LondonStartHour / LondonEndHour | 8 / 16 | London window, end hour inclusive → 08:00–16:59. Gates the breakout entry (state tracking itself runs 24 h under the v1.08 configuration machine). |
+| LondonStartHour / LondonEndHour | 8 / 16 | London window, end hour inclusive → 08:00–16:59. Gates the retest entry (state tracking itself runs 24 h under the configuration machine). |
 | NYStartHour / NYEndHour | 13 / 20 | New York window, end hour inclusive → 13:00–20:59. Together with London (overlap 13–16) the gate is effectively 08:00–20:59. To run 24 h: `LondonStartHour = 0`, `LondonEndHour = 23`. |
 | UseServerTime | false | Which clock the hour inputs refer to. `false` = hours are **GMT**: the EA converts the chart's server clock with `ServerGMTOffset` before comparing. `true` = hours are compared **directly against the chart clock** (broker server time) and `ServerGMTOffset` is ignored — simplest, and stable relative to what you see on screen. |
 | ServerGMTOffset | 2 | Broker's server offset from GMT, used only when `UseServerTime = false`. IC Markets: 2 in winter, 3 during US DST — verify by comparing the Market Watch clock with GMT. |
@@ -188,7 +188,7 @@ All colors are ordinary MQL5 `color` inputs — type any `clrXXX` web-color name
 | Zero volume computed | `RiskPercent` sizing produced lots below the symbol minimum → trade skipped by design (risk control). Use `FixedLots` mode on very small accounts. |
 | Gold/indices behaving oddly | Set `PipSizeOverride` explicitly (e.g., 0.1 for gold) so pips-based inputs mean what you expect. |
 | Wrong session hours | Decide the time base first: `UseServerTime = true` compares the hour inputs against the chart clock directly (no offset math — e.g. IC Markets real London open 08:00 UK ≈ 10:00 chart time), while `false` treats them as GMT and needs a correct `ServerGMTOffset` (2 winter / 3 summer on IC Markets). To disable sessions entirely set `LondonStartHour = 0` / `LondonEndHour = 23`. |
-| No alerts with `AlertOnly = true` | Alerts fire only where a trade would: inside the session windows, spread ≤ `MaxSpreadPips`, breakout body ≤ `MaxBreakoutCandlePips`, SL ≤ cap. The journal shows `ALERT-ONLY:` / `ENTRY ABORTED:` reasons. Alert popups only appear while the terminal is running, and not at all in the Strategy Tester. |
+| No alerts with `AlertOnly = true` | Alerts fire only where a trade would: inside the session windows, spread ≤ `MaxSpreadPips`, entry-candle body ≤ `MaxBreakoutCandlePips`, SL ≤ cap. The journal shows `ALERT-ONLY:` / `ENTRY ABORTED:` reasons. Alert popups only appear while the terminal is running, and not at all in the Strategy Tester. |
 | Exit CSV file not created | `ExportTradesCSV` must be `true`; the file appears under `MQL5\Files\TRAB_exits_<magic>.csv` (in the Strategy Tester: under the tester agent's `Files` folder). Check the journal for `exit CSV: cannot open ...` errors. |
 | EA restarted while in a trade | Position is auto-adopted; the initial risk reference is persisted in a terminal Global Variable (`TRAB_<magic>_<ticket>_R`). |
 | Background never tints at all | v1.02 applies the tint on attach — check the journal for `state tinting active`. If missing: (a) the chart is running an older `.ex5` — recompile and re-attach; (b) `ColorizeStates = false`; (c) you are attached to a chart in a **different terminal installation** than the one this source folder belongs to. |
