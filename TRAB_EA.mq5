@@ -26,7 +26,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "TRAB"
 #property link        ""
-#property version     "1.05"
+#property version     "1.06"
 #property description "M1 Trend Reversal & Accumulation Breakout EA"
 #property description "Sequential phase state machine: Exhaustion -> Accumulation -> Crossover -> Breakout entry."
 #property description "Runs on the chart symbol. M1 timeframe only."
@@ -763,6 +763,16 @@ void EvaluateOnBarClose()
       // --------------------------------------------------------------
       case ST_PRIMED:
         {
+         // v1.06 (spec §2.4): the reversal premise must stay alive while primed -
+         // if the fast band recrosses back into the slow band, the setup is dead.
+         // Without this guard a stale setup could fire an entry against the EA's
+         // own trend definition up to SetupExpiryBars later (anti-trend entry).
+         if(!SeparationHeld(g_dir, true))
+           {
+            ResetToIdle("fast band recrossed - reversal premise invalid");
+            break;
+           }
+
          const double c1        = g_rates[0].close;
          const bool   brokeUp   = (c1 > g_boxTop);
          const bool   brokeDown = (c1 < g_boxBottom);
@@ -1261,7 +1271,7 @@ void UpdatePanel()
    else if(g_lastFresh < 0)
       freshTxt = "uptrend-exhausted (short setup)";
 
-   string s = "TRAB EA v1.05 | " + _Symbol + " " + EnumToString(_Period) + "\n";
+   string s = "TRAB EA v1.06 | " + _Symbol + " " + EnumToString(_Period) + "\n";
    if(InpAlertOnly)
       s += ">>> ALERT-ONLY MODE: signals are alerted, NO trades are opened <<<\n";
    if(!g_canTrade)

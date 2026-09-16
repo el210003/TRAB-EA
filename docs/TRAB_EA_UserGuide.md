@@ -1,6 +1,6 @@
 # TRAB EA — User Guide
 
-**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.05** · **Timeframe: M1 only**
+**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.06** · **Timeframe: M1 only**
 Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 
 ---
@@ -32,11 +32,12 @@ PRIMED ──(M1 candle CLOSES outside the frozen box, in reversal direction)─
 Reset conditions (back to IDLE, logged with reason):
 - exhaustion/accumulation waits exceed their staleness caps,
 - the fast band returns to the original trend side without crossing,
+- **while PRIMED: the fast band recrosses back into the slow band (v1.06)** — the reversal premise is dead; without this guard a stale setup could fire an entry against the EA's own trend definition,
 - a wrong-side breakout, or a close back inside the box after a breakout,
 - primed setup expiry (`SetupExpiryBars`),
 - computed SL exceeding `MaxStopLossPips` (trade intentionally skipped).
 
-**Journal tags to know:** `Phase 1 confirmed`, `Phase 2 validated`, `Phase 3 confirmed -> PRIMED`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - exit: TP/Trail/Cross/SL/Other | net ±R` (v1.05 exit classification), `exit stats: ...` (running per-session summary, v1.05), `ALERT-ONLY: ...` (v1.04 signal fired instead of an order).
+**Journal tags to know:** `Phase 1 confirmed`, `Phase 2 validated`, `Phase 3 confirmed -> PRIMED`, `ENTRY ABORTED: ...` (spread/session/spike gates), `TRADE SKIPPED: ...` (SL cap, sizing), `>>> BUY/SELL ...` (fill), `trailing stop ACTIVATED`, `EMA cross EXIT ...` (profit-protection close, v1.03), `position ... CLOSED - exit: TP/Trail/Cross/SL/Other | net ±R` (v1.05 exit classification), `exit stats: ...` (running per-session summary, v1.05), `ALERT-ONLY: ...` (v1.04 signal fired instead of an order), `fast band recrossed - reversal premise invalid` (v1.06 primed-setup guard).
 
 The state machine is **frozen while a position is open** — one trade at a time per symbol/magic. After the position closes it resumes at IDLE with a fresh evaluation.
 
