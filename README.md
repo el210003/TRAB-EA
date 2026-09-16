@@ -1,8 +1,8 @@
 # TRAB EA — Trend Reversal & Accumulation Breakout
 
-**M1 Expert Advisor for MetaTrader 5** · Version 1.06
+**M1 Expert Advisor for MetaTrader 5** · Version 1.07
 
-TRAB is a three-phase reversal strategy for M1 charts. It hunts for exhausted trends, waits for an accumulation squeeze, then trades the definitive reversal breakout — with fully rule-based entries, exits, and risk management.
+TRAB is a three-phase reversal strategy for M1 charts. It locks onto mature trends, waits for the accumulation squeeze, then trades the definitive reversal breakout — with fully rule-based entries, exits, and risk management.
 
 > **Status:** experimental / research EA. Trade on demo first. No performance guarantee — see [Disclaimer](#-disclaimer).
 
@@ -11,8 +11,8 @@ TRAB is a three-phase reversal strategy for M1 charts. It hunts for exhausted tr
 ## How It Trades
 
 ```
-IDLE ──(fast band fully on one side for 60 closed bars)──▶ EXHAUSTED
-EXHAUSTED ──(4-EMA squeeze < 5 pips)──▶ ACCUMULATION
+IDLE ──(fast band fully on one side for 60 closed bars)──▶ TRENDING
+TRENDING ──(4-EMA squeeze < 5 pips)──▶ ACCUMULATION
 ACCUMULATION ──(fast band definitively crossed to reversal side)──▶ PRIMED
 PRIMED ──(M1 candle CLOSES outside the frozen box)──▶ MARKET ORDER
                                                        (or an Alert with AlertOnly = true)
@@ -20,7 +20,7 @@ PRIMED ──(M1 candle CLOSES outside the frozen box)──▶ MARKET ORDER
 
 | Phase | What it detects |
 |---|---|
-| **1 · Exhaustion** | EMA20/50 band entirely above (or below) the EMA150/200 macro band for N consecutive closed M1 candles — a stretched, exhausted trend |
+| **1 · Trend** | EMA20/50 band entirely above (or below) the EMA150/200 macro band for N consecutive closed M1 candles — a **mature trend in place** (exhaustion is *not* assumed; the EA waits for evidence in later phases) |
 | **2 · Accumulation** | A 45-candle consolidation box plus a 4-EMA squeeze below a pip threshold — the market is coiling |
 | **3 · Crossover** | Both fast EMAs definitively cross to the *opposite* side of the macro band — the reversal candidate |
 | **Entry** | First M1 candle **close** outside the frozen box, in the direction of the crossover |
@@ -48,7 +48,7 @@ PRIMED ──(M1 candle CLOSES outside the frozen box)──▶ MARKET ORDER
 ## Installation
 
 1. Copy `TRAB_EA.mq5` to `<Data Folder>\MQL5\Experts\` (or open the folder directly: MetaTrader 5 → *File → Open Data Folder*).
-2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.06, compiled 0 errors / 0 warnings).
+2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.07, compiled 0 errors / 0 warnings).
 3. Attach to an **M1 chart** and enable **Algo Trading**.
 4. Confirm the journal shows: `TRAB: initialized on <SYMBOL> PERIOD_M1 | pip=... | ...`
 
@@ -101,7 +101,7 @@ Entries are gated to the London (08:00–16:59) and New York (13:00–20:59) win
 ```
 TRAB-EA/
 ├── TRAB_EA.mq5                     # Full source (MQL5)
-├── TRAB_EA.ex5                     # Prebuilt v1.06 (drop into MQL5\Experts)
+├── TRAB_EA.ex5                     # Prebuilt v1.07 (drop into MQL5\Experts)
 ├── docs/
 │   ├── TRAB_EA_Proposal.md         # Formal spec & decision log
 │   └── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting

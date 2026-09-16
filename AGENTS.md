@@ -5,7 +5,7 @@ Guidance for AI coding agents working in this repository.
 ## Project Overview
 
 **TRAB EA** — a MetaTrader 5 Expert Advisor (MQL5) implementing a three-phase reversal
-strategy on M1 charts: Exhaustion → Accumulation → Crossover → Breakout entry.
+strategy on M1 charts: Trend (mature trend in place) → Accumulation squeeze → Crossover → Breakout entry.
 Single-file EA (`TRAB_EA.mq5`), no external dependencies beyond the standard library
 (`<Trade\Trade.mqh>`).
 

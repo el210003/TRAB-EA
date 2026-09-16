@@ -1,6 +1,6 @@
 # TRAB EA — User Guide
 
-**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.06** · **Timeframe: M1 only**
+**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.07** · **Timeframe: M1 only**
 Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 
 ---
@@ -22,15 +22,17 @@ Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 ## 2. How It Trades (State Machine)
 
 ```
-IDLE ──(60 closed bars with fast band fully on one side)──▶ EXHAUSTED
-EXHAUSTED ──(4-EMA squeeze < threshold)──▶ ACCUMULATION
+IDLE ──(60 closed bars with fast band fully on one side)──▶ TRENDING
+TRENDING ──(4-EMA squeeze < threshold)──▶ ACCUMULATION
 ACCUMULATION ──(EMA20+EMA50 fully crossed to reversal side for N bars)──▶ PRIMED
 PRIMED ──(M1 candle CLOSES outside the frozen box, in reversal direction)──▶ MARKET ORDER
                                              (or an MT5 Alert, with AlertOnly = true)
 ```
 
+> **Terminology (v1.07):** Phase 1 was originally called "Exhaustion". It does **not** detect exhaustion — it certifies that a **mature trend is in place**; exhaustion evidence arrives later (squeeze → crossover → breakout). The state is therefore displayed as `TRENDING`. Input identifiers keep the historical `Exhaustion...` names for `.set`-file compatibility.
+
 Reset conditions (back to IDLE, logged with reason):
-- exhaustion/accumulation waits exceed their staleness caps,
+- trending/accumulation waits exceed their staleness caps,
 - the fast band returns to the original trend side without crossing,
 - **while PRIMED: the fast band recrosses back into the slow band (v1.06)** — the reversal premise is dead; without this guard a stale setup could fire an entry against the EA's own trend definition,
 - a wrong-side breakout, or a close back inside the box after a breakout,
@@ -48,7 +50,7 @@ For peripheral-vision awareness, the EA tints the chart background as the state 
 | State | Default background color | Meaning at a glance |
 |---|---|---|
 | IDLE | unchanged (`clrNONE`) | nothing happening |
-| EXHAUSTED | `clrSaddleBrown` (amber/brown) | Phase 1 armed — waiting for the EMA squeeze |
+| TRENDING | `clrSaddleBrown` (amber/brown) | Phase 1 armed — mature trend in place, waiting for squeeze/crossover evidence |
 | ACCUMULATION | `clrMidnightBlue` (dark blue) | Phase 2 validated — waiting for the band crossover |
 | PRIMED (long setup) | `clrDarkGreen` | box frozen — waiting for the bullish breakout close |
 | PRIMED (short setup) | `clrDarkRed` | box frozen — waiting for the bearish breakout close |
@@ -82,12 +84,12 @@ Every input with its default, what it controls, and when to change it. The defau
 ### Phase Detection
 | Input | Default | Usage |
 |---|---|---|
-| ExhaustionLookbackBars | 60 | Phase 1: both fast EMAs must sit entirely above (or below) both slow EMAs for this many **consecutive closed bars**. Raise = rarer, more mature exhaustion; lower = more, earlier and riskier setups. Minimum 5. |
+| ExhaustionLookbackBars | 60 | Phase 1: both fast EMAs must sit entirely above (or below) both slow EMAs for this many **consecutive closed bars** — i.e. a mature trend must pre-exist. Raise = rarer, more mature trends required; lower = more, earlier and riskier setups. Minimum 5. |
 | BoxLookbackBars | 45 | Phase 2: lookback for the consolidation box (highest high / lowest low) frozen when the setup primes. The box defines the breakout trigger and the box-edge SL. Bigger = wider boxes → wider SLs → more SL-cap skips. Minimum 5. |
 | SqueezeThresholdPips | 5.0 | Phase 2 validation: the average distance between the highest and lowest of the 4 EMAs must be below this (in pips). Scale with the symbol's volatility; assumes a correct pip definition (see `PipSizeOverride`). |
 | SqueezeLookbackBars | 3 | Bars averaged for the squeeze measurement. 1 = instant snapshot (noisy); higher = smoother but lags. Minimum 1. |
 | CrossConfirmBars | 2 | Phase 3: closed bars the fast band must remain fully on the reversal side before the cross counts as definitive. Raise = fewer false crossovers, later entries. Minimum 1. |
-| ExhaustionMaxBars | 240 | Staleness cap for the EXHAUSTED state. The in-state counter resets while the original separation still holds, so a healthy trend extends the wait; the cap fires only once separation is lost and no squeeze has formed. |
+| ExhaustionMaxBars | 240 | Staleness cap for the TRENDING state. The in-state counter resets while the original separation still holds, so a healthy trend extends the wait; the cap fires only once separation is lost and no squeeze has formed. |
 | AccumulationMaxBars | 60 | Same cap for ACCUMULATION while waiting for the crossover. On expiry the machine resets to IDLE and re-arms from scratch. |
 
 ### Entry
@@ -155,7 +157,7 @@ Session filter gates **priming and entry only** — open positions are still man
 |---|---|---|
 | ColorizeStates | true | Master toggle for the per-state background tint (see §2.1). |
 | IdleBgColor | clrNONE | IDLE background (`clrNONE` = keep original). |
-| ExhaustedBgColor | clrSaddleBrown | EXHAUSTED tint (amber/brown). |
+| ExhaustedBgColor | clrSaddleBrown | TRENDING tint (amber/brown). |
 | AccumBgColor | clrMidnightBlue | ACCUMULATION tint (dark blue). |
 | PrimedLongBg | clrDarkGreen | PRIMED long tint (dark green). |
 | PrimedShortBg | clrDarkRed | PRIMED short tint (dark red). |

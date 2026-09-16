@@ -47,6 +47,9 @@ The core of the EA is a sequential state machine. A trade can only be primed by 
 ```
 
 #### Phase 1 — Exhaustion (Trend Pre-Existence)
+
+> **Terminology note (v1.07, as-built):** the original "Exhaustion" framing overstated what this phase can know. Phase 1 certifies only that a **mature trend is in place** (trend pre-existence) — exhaustion is never assumed at this stage, since it cannot be observed yet. The EA waits for evidence (squeeze → crossover → breakout) before acting; the state machine displays this state as `TRENDING` (internal enum renamed accordingly; input identifiers keep the historical `Exhaustion...` names for `.set`-file compatibility).
+
 - Evaluate the last **60 closed M1 candles** (lookback input, default 60).
 - **Bullish exhaustion (for short setups):** for all 60 candles, *both* EMA20 and EMA50 are strictly **above** both EMA150 and EMA200.
 - **Bearish exhaustion (for long setups):** for all 60 candles, *both* EMA20 and EMA50 are strictly **below** both EMA150 and EMA200.

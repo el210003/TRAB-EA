@@ -6,7 +6,7 @@
 //| Timeframe: M1 only (enforced)                                    |
 //| Symbol   : runs on the chart symbol it is attached to            |
 //|                                                                  |
-//| Phase 1 (Exhaustion)     : fast band (EMA20/50) entirely above   |
+//| Phase 1 (Trend Context)  : fast band (EMA20/50) entirely above   |
 //|                            or below macro band (EMA150/200) for  |
 //|                            N consecutive closed M1 candles       |
 //| Phase 2 (Accumulation)   : 45-candle consolidation box + 4-EMA   |
@@ -26,9 +26,9 @@
 //+------------------------------------------------------------------+
 #property copyright   "TRAB"
 #property link        ""
-#property version     "1.06"
+#property version     "1.07"
 #property description "M1 Trend Reversal & Accumulation Breakout EA"
-#property description "Sequential phase state machine: Exhaustion -> Accumulation -> Crossover -> Breakout entry."
+#property description "Sequential phase state machine: Trend -> Squeeze -> Crossover -> Breakout entry."
 #property description "Runs on the chart symbol. M1 timeframe only."
 
 #include <Trade\Trade.mqh>
@@ -43,12 +43,12 @@ input int    InpSlowEma1Period        = 150;     // Slow EMA 1 period (macro ban
 input int    InpSlowEma2Period        = 200;     // Slow EMA 2 period (macro band outer)
 
 input group "=== Phase Detection ==="
-input int    InpExhaustionLookbackBars= 60;      // Phase 1: consecutive separated candles
+input int    InpExhaustionLookbackBars= 60;      // Phase 1: mature-trend lookback (consecutive separated candles)
 input int    InpBoxLookbackBars       = 45;      // Phase 2: consolidation box lookback
 input double InpSqueezeThresholdPips  = 5.0;     // Phase 2: max 4-EMA spread (pips)
 input int    InpSqueezeLookbackBars   = 3;       // Phase 2: squeeze averaging window
 input int    InpCrossConfirmBars      = 2;       // Phase 3: bars to confirm definitive cross
-input int    InpExhaustionMaxBars     = 240;     // Max bars exhaustion state may wait for a squeeze
+input int    InpExhaustionMaxBars     = 240;     // Max bars TRENDING state may wait for a squeeze
 input int    InpAccumulationMaxBars   = 60;      // Max bars accumulation state may wait for the cross
 
 input group "=== Entry ==="
@@ -98,7 +98,7 @@ input bool   InpShowPanel             = true;    // Show on-chart status panel
 input group "=== State Colors (chart background tint) ==="
 input bool   InpColorizeStates        = true;            // Tint chart background per state
 input color  InpIdleBgColor           = clrNONE;         // IDLE background (clrNONE = keep original)
-input color  InpExhaustedBgColor      = clrSaddleBrown;  // EXHAUSTED tint (amber/brown)
+input color  InpExhaustedBgColor      = clrSaddleBrown;  // TRENDING tint (amber/brown) - input name kept for .set compat
 input color  InpAccumBgColor          = clrMidnightBlue; // ACCUMULATION tint (dark blue)
 input color  InpPrimedLongBg          = clrDarkGreen;    // PRIMED long tint (dark green)
 input color  InpPrimedShortBg         = clrDarkRed;      // PRIMED short tint (dark red)
@@ -108,8 +108,8 @@ input color  InpPrimedShortBg         = clrDarkRed;      // PRIMED short tint (d
 //+------------------------------------------------------------------+
 enum ENUM_TRAB_STATE
   {
-   ST_IDLE       = 0,  // no qualified exhaustion yet
-   ST_EXHAUSTED  = 1,  // Phase 1 confirmed, waiting for squeeze (Phase 2)
+   ST_IDLE       = 0,  // nothing armed yet
+   ST_TRENDING   = 1,  // Phase 1 confirmed: mature trend in place, waiting for squeeze (Phase 2)
    ST_ACCUM      = 2,  // Phase 2 validated, waiting for crossover (Phase 3)
    ST_PRIMED     = 3   // Phase 3 confirmed, box frozen, waiting for breakout close
   };
@@ -180,7 +180,7 @@ string StateName(const ENUM_TRAB_STATE s)
   {
    switch(s)
      {
-      case ST_EXHAUSTED: return "EXHAUSTED";
+      case ST_TRENDING:  return "TRENDING";
       case ST_ACCUM:     return "ACCUMULATION";
       case ST_PRIMED:    return "PRIMED";
      }
@@ -277,7 +277,7 @@ color StateBgColor(const ENUM_TRAB_STATE s)
       return (g_dir > 0 ? InpPrimedLongBg : InpPrimedShortBg);
    switch(s)
      {
-      case ST_EXHAUSTED: return InpExhaustedBgColor;
+      case ST_TRENDING:  return InpExhaustedBgColor;
       case ST_ACCUM:     return InpAccumBgColor;
      }
    return InpIdleBgColor;
@@ -501,8 +501,8 @@ bool FastBelow(const int i)
 
 //+------------------------------------------------------------------+
 //| Phase 1 (fresh): fast band fully on one side for N closed bars.  |
-//| Returns +1 (downtrend exhausted -> long setup), -1 (uptrend      |
-//| exhausted -> short setup) or 0 (no qualified exhaustion).        |
+//| Returns +1 (mature downtrend -> long reversal watch), -1 (ma-    |
+//| ture uptrend -> short reversal watch) or 0 (no mature trend).    |
 //+------------------------------------------------------------------+
 int FreshPhase1()
   {
@@ -512,8 +512,8 @@ int FreshPhase1()
       if(!FastAbove(i)) allAbove = false;
       if(!FastBelow(i)) allBelow = false;
      }
-   if(allAbove) return -1;   // exhausted uptrend  -> short reversal anticipated
-   if(allBelow) return +1;   // exhausted downtrend -> long reversal anticipated
+   if(allAbove) return -1;   // mature uptrend    -> short reversal watch
+   if(allBelow) return +1;   // mature downtrend  -> long reversal watch
    return 0;
   }
 
@@ -685,23 +685,23 @@ void EvaluateOnBarClose()
         {
          if(g_lastFresh != 0 && SessionOK())
            {
-            g_state     = ST_EXHAUSTED;
+            g_state     = ST_TRENDING;
             g_dir       = g_lastFresh;
             g_stateBars = 0;
-            Log(StringFormat("Phase 1 confirmed (%s exhaustion) -> EXHAUSTED, waiting for accumulation squeeze",
+            Log(StringFormat("Phase 1 confirmed (%s trend in place) -> TRENDING, waiting for squeeze & crossover evidence",
                              g_dir > 0 ? "downtrend" : "uptrend"));
            }
          break;
         }
 
       // --------------------------------------------------------------
-      case ST_EXHAUSTED:
+      case ST_TRENDING:
         {
          if(g_lastFresh != 0 && g_lastFresh != g_dir)
            {
             g_dir       = g_lastFresh;
             g_stateBars = 0;
-            Log("exhaustion direction flipped - re-armed");
+            Log("trend direction flipped - re-armed");
            }
          else if(g_lastFresh == g_dir)
             g_stateBars = 0;                       // trend still intact, keep waiting
@@ -717,7 +717,7 @@ void EvaluateOnBarClose()
 
          g_stateBars++;
          if(g_stateBars > InpExhaustionMaxBars)
-            ResetToIdle("exhaustion wait expired without a squeeze");
+            ResetToIdle("trend wait expired without a squeeze");
          break;
         }
 
@@ -726,10 +726,10 @@ void EvaluateOnBarClose()
         {
          if(g_lastFresh != 0 && g_lastFresh != g_dir)
            {
-            g_state     = ST_EXHAUSTED;
+            g_state     = ST_TRENDING;
             g_dir       = g_lastFresh;
             g_stateBars = 0;
-            Log("fresh opposite exhaustion - re-anchored");
+            Log("fresh opposite trend - re-anchored");
             break;
            }
 
@@ -1267,11 +1267,11 @@ void UpdatePanel()
 
    string freshTxt = "none";
    if(g_lastFresh > 0)
-      freshTxt = "downtrend-exhausted (long setup)";
+      freshTxt = "mature downtrend (long reversal watch)";
    else if(g_lastFresh < 0)
-      freshTxt = "uptrend-exhausted (short setup)";
+      freshTxt = "mature uptrend (short reversal watch)";
 
-   string s = "TRAB EA v1.06 | " + _Symbol + " " + EnumToString(_Period) + "\n";
+   string s = "TRAB EA v1.07 | " + _Symbol + " " + EnumToString(_Period) + "\n";
    if(InpAlertOnly)
       s += ">>> ALERT-ONLY MODE: signals are alerted, NO trades are opened <<<\n";
    if(!g_canTrade)
