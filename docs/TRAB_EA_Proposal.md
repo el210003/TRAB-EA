@@ -292,3 +292,32 @@ Key implementation decisions:
 - Tester presets delivered to `MQL5\Presets`: `TRAB_baseline_FX.set` (5-digit FX), `TRAB_baseline_XAUUSD.set` (gold, pip = $0.10, scaled thresholds), `TRAB_optimize_walkforward.set` (3,150-pass grid on the four key parameters).
 - **v1.04–v1.09 as-built:** `AlertOnly` signal mode — MT5 Alert instead of an order (v1.04); exit-reason analytics — every close classified TP/Trail/Cross/SL/Other with R-multiple, running per-session stats, optional CSV export (v1.05); the §2.4 **EMA-recross reset implemented** (v1.06); Phase 1 relabeled `TRENDING` — trend *presence*, not exhaustion (v1.07); **v1.08 major redesign (owner-directed)** — pure EMA-configuration state machine: TRENDING = full stack (E20>E50>E150>E200 or reverse), ACCUMULATION = EMA20/50 crack against the stack, PRIMED = EMA20 sweeps beyond E150+E200 within `SweepMaxBars` bars of the crack; sweep **price purity** (no touch/cross of EMA20) required until the sweep completes; the 60/240-bar lookbacks and the 4-EMA squeeze are retired; **v1.09 entry redesign (owner-directed)** — the box-breakout entry is replaced by the **EMA150 retest + pin bar**: after the sweep, price must return to EMA150 and print a rejection pin (wick ≥ `PinWickRatio` × body, closing back on the sweep side) to trigger the entry, SL beyond the pin's extreme; a failed retest (close beyond EMA150) or a retest without a pin sends the machine back to ACCUMULATION for a fresh crack→sweep cycle; sweep purity is scoped to the pre-PRIMED phase (the retest expects price to cross EMA20); SL = pin extreme ± `PinBufferPips` (the box and the deeper-wins/nearer-wins SL logic are retired).
 - Remaining work per §4: real-tick backtests, walk-forward sensitivity runs, and 4–8 weeks of forward testing before live deployment.
+
+### Backtest findings (EURUSD M1, real ticks, 2023-01-01 → 2025-12-31)
+
+A headless strategy-tester run (Model=4, real ticks, $10k, 1% risk/trade,
+baseline FX preset) across 3 years produced **121 trades and a net −53.8R**
+(−$4,210, PF 0.44, 42% max DD). A management A/B decomposition on the same
+signal set gave:
+
+| Config | Win % | SumR | Net USD | PF |
+|---|---|---|---|---|
+| Baseline (trail + cross-exit) | 21.5% | −53.8 | −4,210 | 0.44 |
+| **NoMgmt RR2** (best) | 27.3% | −56.2 | −4,366 | 0.51 |
+| NoCross | 24.8% | −54.9 | −4,283 | 0.48 |
+| NoTrail | 21.5% | −57.2 | −4,402 | 0.44 |
+| NoMgmt RR3 | 19.0% | −64.1 | −4,815 | 0.50 |
+
+**Conclusion:** the trade-management exit layer (EMA50 trailing + EMA10/20
+cross-exit) is essentially **neutral** — removing it raises the win rate and
+full-TP captures but slightly worsens net R. No tested configuration is
+profitable because the **entry edge is statistically negative**: at RR2 the win
+rate is ~27% (below the 33% breakeven) and raising the reward to RR3 merely
+lowers the win rate to ~19%, so expected value stays negative at every reward.
+
+The v1.09 entry (EMA20 sweep → EMA150 retest + pin bar) does not separate
+winners from losers reliably enough to be tradeable as-is in this window. This
+supersedes the viability assumption in §1/§7 and **blocks live deployment**
+until a real entry-rework (a genuine filter to lift win rate above breakeven,
+or a higher-reward / multi-TP structure that holds EV positive) is validated.
+See AGENTS.md → Backtesting for the reproducible headless-run + parsing recipe.

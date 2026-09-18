@@ -49,16 +49,33 @@ The MT5 Strategy Tester can be driven non-interactively from the CLI via a
 Expert=EMA-Trading\TRAB_EA.ex5   ; path relative to <Data Folder>\MQL5\Experts
 Symbol=EURUSD
 Period=M1
+Optimization=0
 Model=4                          ; 4 = "Every tick based on real ticks" (REQUIRED for per-tick trailing)
 FromDate=2023.01.01
 ToDate=2025.12.31
-ExpertParameters=<abs path>\preset\TRAB_baseline_FX.set
+ForwardMode=0
 Deposit=10000
 Currency=USD
 Leverage=100
-ReplaceReport=1
+ExecutionMode=0
+Visual=0
 ShutdownTerminal=1
+
+[TesterInputs]
+; Inline EA inputs — the ONLY reliable way to override parameters headlessly.
+; Format: Name=value||start||step||stop||(N=fixed|Y=optimize)
+InpUseEmaCrossExit=false||0||0||0||N
+InpTrailActivateRR=999.0||0||0||0||N
 ```
+
+> **Gotcha (learned the hard way):** `ExpertParameters=<path>.set` is **NOT**
+> honored when the `.set` lives in the repo `preset/` folder — it silently falls
+> back to the EA's compiled defaults. MT5 only resolves a `.set` from
+> `<Data Folder>\MQL5\Presets\`. For headless runs, pass inputs **inline via the
+> `[TesterInputs]` section** instead (each `Name=value||0||0||0||N`). The
+> `TRAB_optimize_walkforward.set` `||`-format maps directly to this.
+> To build a variant: `sed` a base preset into a new `.set`, then feed it through
+> the same `[TesterInputs]` transform.
 
 **Launch** (detached so it doesn't block):
 
@@ -71,6 +88,11 @@ cmd //c start "" '<path>\terminal64.exe' "/config:<abs path>\Tester\trab_backtes
 - Progress: `iconv -f UTF-16LE -t UTF-8 <Data Folder>\Tester\logs\YYYYMMDD.log`
   and read the last simulated `TRAB:` timestamp. `metatester64.exe` running in
   `tasklist` = still processing; both gone = finished.
+- The EA journal is mirrored to `<Data Folder>\Tester\logs\YYYYMMDD.log` **and**
+  `<MetaQuotes Data>\Tester\<terminalId>\Agent-*\logs\YYYYMMDD.log`. Read the
+  former. Note the log is **per calendar day** (it rolls at midnight) and the
+  tester can also spin up faster on subsequent runs once tick data is cached
+  (a cached 3-yr M1 run takes ~5s, not ~5min).
 - MT5's own `Report=` XML/HTML **was not** emitted at the configured path in this
   setup — don't rely on it. Parse the **tester journal** instead: the EA logs
   its own per-trade and summary lines there.
@@ -81,6 +103,11 @@ cmd //c start "" '<path>\terminal64.exe' "/config:<abs path>\Tester\trab_backtes
     <R>R total | TP ... | Trail ... | Cross ... | SL ...`
 - The `.tst` file in `<Data Folder>\Tester\cache\` is the raw test result
   (`TRAB_EA.EURUSD.M1.<from>_<to>.4.<hash>.tst`) — a good success indicator.
+- **Isolating one run from another in the shared daily log:** snapshot the
+  `grep -c "position #[0-9]+ CLOSED"` count just before the launch, then after the
+  run take only lines `N0+1..N1` (chronological). Each single-parameter run adds
+  exactly the same signal count, so compare `Trades`, win %, `sumR`, and the
+  per-exit breakdown (`TP/Trail/Cross/SL`).
 
 > **Model matters:** `Model=4` (real ticks) is required for this EA — the
 > trailing stop and the EMA cross-exit run per-tick, which other models don't
