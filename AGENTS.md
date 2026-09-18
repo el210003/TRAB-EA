@@ -31,6 +31,62 @@ Compile with the MetaEditor CLI (no interactive IDE needed):
 - Delete the temp `compile.log` afterwards (it is git-ignored anyway).
 - If MetaEditor is running interactively, the CLI compile still works.
 
+## Backtesting (headless Strategy Tester)
+
+The MT5 Strategy Tester can be driven non-interactively from the CLI via a
+`[Tester]` INI config file — no GUI needed.
+
+> **Critical gotcha:** the headless `/config` launch **cannot run while the MT5
+> terminal is open**. Close `terminal64.exe` first (it's usually attached to a
+> live/demo chart, so do this deliberately, never `taskkill` it out from under a
+> live session without asking). `ShutdownTerminal=1` makes the terminal close
+> itself when the test finishes.
+
+**Tester config template** (`<Data Folder>\Tester\trab_backtest.ini`):
+
+```ini
+[Tester]
+Expert=EMA-Trading\TRAB_EA.ex5   ; path relative to <Data Folder>\MQL5\Experts
+Symbol=EURUSD
+Period=M1
+Model=4                          ; 4 = "Every tick based on real ticks" (REQUIRED for per-tick trailing)
+FromDate=2023.01.01
+ToDate=2025.12.31
+ExpertParameters=<abs path>\preset\TRAB_baseline_FX.set
+Deposit=10000
+Currency=USD
+Leverage=100
+ReplaceReport=1
+ShutdownTerminal=1
+```
+
+**Launch** (detached so it doesn't block):
+
+```bash
+cmd //c start "" '<path>\terminal64.exe' "/config:<abs path>\Tester\trab_backtest.ini"
+```
+
+**Monitor & collect results** (all logs are UTF-16LE — convert with `iconv`):
+
+- Progress: `iconv -f UTF-16LE -t UTF-8 <Data Folder>\Tester\logs\YYYYMMDD.log`
+  and read the last simulated `TRAB:` timestamp. `metatester64.exe` running in
+  `tasklist` = still processing; both gone = finished.
+- MT5's own `Report=` XML/HTML **was not** emitted at the configured path in this
+  setup — don't rely on it. Parse the **tester journal** instead: the EA logs
+  its own per-trade and summary lines there.
+- Journal lines to grep (same journal as above):
+  - Entries: `>>> (BUY|SELL)`
+  - Per-trade result: `position #[0-9]+ CLOSED - exit: <TP|Trail|Cross|SL|Other> | net <R>R / <USD>`
+  - Session summary: `exit stats:` and the final `final exit stats - <n> trades,
+    <R>R total | TP ... | Trail ... | Cross ... | SL ...`
+- The `.tst` file in `<Data Folder>\Tester\cache\` is the raw test result
+  (`TRAB_EA.EURUSD.M1.<from>_<to>.4.<hash>.tst`) — a good success indicator.
+
+> **Model matters:** `Model=4` (real ticks) is required for this EA — the
+> trailing stop and the EMA cross-exit run per-tick, which other models don't
+> model faithfully. The tester's `Alert()` does **not** fire in the tester, so
+> validate alert-only behavior on a live/demo chart.
+
 ## Code Conventions
 
 Follow the existing style exactly — this file is one large, deliberately flat module:
