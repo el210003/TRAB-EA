@@ -26,12 +26,23 @@
 //+------------------------------------------------------------------+
 #property copyright   "TRAB"
 #property link        ""
-#property version     "1.10"
+#property version     "1.11"
 #property description "M1 Trend Reversal & Accumulation Breakout EA"
 #property description "Sequential EMA-configuration state machine: Stack -> Crack -> Sweep -> Retest entry."
 #property description "Runs on the chart symbol. M1 timeframe only."
 
 #include <Trade\Trade.mqh>
+
+//+------------------------------------------------------------------+
+//| Retest level source (v1.11)                                       |
+//+------------------------------------------------------------------+
+enum ENUM_RETEST_MODE
+  {
+   RT_EMA     = 0,   // moving-average retest (InpRetestEmaPeriod)
+   RT_FIB     = 1,   // Fibonacci retracement of the crack->sweep impulse
+   RT_BREAK   = 2,   // sweep-breakout bar extreme (break-and-retest)
+   RT_SWING   = 3    // recent swing (zigzag) high/low
+  };
 
 //+------------------------------------------------------------------+
 //| Inputs                                                           |
@@ -46,6 +57,10 @@ input group "=== Phase Machine (v1.09) ==="
 input int    InpSweepMaxBars          = 12;      // Max bars from crack to sweep; bounds retest attempts too
 input bool   InpPricePurityTouch      = true;    // Sweep purity: touch of EMA20 (vs close) invalidates
 input double InpPinWickRatio          = 2.0;     // Pin bar: rejection wick >= ratio x body
+input int    InpRetestEmaPeriod       = 150;      // Retest EMA period for the pin-bar entry
+input ENUM_RETEST_MODE InpRetestMode  = RT_EMA;    // Retest level source (EMA / Fib / breakout / swing)
+input double InpRetestFib             = 0.382;     // Fib retracement fraction (RT_FIB mode)
+input int    InpSwingBars             = 3;         // Swing pivot half-width, bars (RT_SWING mode)
 
 input group "=== Entry ==="
 input int    InpSetupExpiryBars       = 20;      // Primed setup lifetime (bars, frozen box)
@@ -122,6 +137,11 @@ int               g_hFast1          = INVALID_HANDLE;
 int               g_hFast2          = INVALID_HANDLE;
 int               g_hSlow1          = INVALID_HANDLE;
 int               g_hSlow2          = INVALID_HANDLE;
+int               g_hRetest         = INVALID_HANDLE;   // retest-level EMA period (InpRetestEmaPeriod)
+double            g_impHigh         = 0.0;    // crack->sweep impulse high (freeze at sweep; RT_FIB)
+double            g_impLow          = 0.0;    // crack->sweep impulse low (freeze at sweep; RT_FIB)
+double            g_breakHigh       = 0.0;    // sweep-completion bar high (RT_BREAK)
+double            g_breakLow        = 0.0;    // sweep-completion bar low  (RT_BREAK)
 int               g_hEmaExitFast    = INVALID_HANDLE;   // EMA cross-exit fast EMA (EMA10)
 int               g_hEmaExitSlow    = INVALID_HANDLE;   // EMA cross-exit slow EMA (EMA20)
 
@@ -143,7 +163,7 @@ datetime          g_lastBarTime     = 0;
 
 // bar-close data cache (index 0 = last CLOSED candle)
 MqlRates          g_rates[];
-double            g_f1[], g_f2[], g_s1[], g_s2[];
+double            g_f1[], g_f2[], g_s1[], g_s2[], g_r1[];
 double            g_e20             = 0.0;    // last closed EMA20 (panel display)
 double            g_e50             = 0.0;    // last closed EMA50 (panel display)
 double            g_e150            = 0.0;    // last closed EMA150 (panel display)
@@ -174,6 +194,57 @@ double            g_exSumRAll      = 0.0;    // total R this session
 bool              g_bgSaved         = false;  // original background captured once
 color             g_bgOriginal      = clrNONE;  // chart background before the EA tinted it
 color             g_bgApplied       = clrNONE;  // color currently on the chart
+
+//+------------------------------------------------------------------+
+//| Retest level source (v1.11): EMA / Fib / breakout / swing          |
+//+------------------------------------------------------------------+
+double SwingRetestLevel()
+  {
+   const int look = InpSwingBars;   // pivot half-width
+   const int scan = 80;             // bars to scan back for a pivot
+   MqlRates r[];
+   ArraySetAsSeries(r, true);
+   if(CopyRates(_Symbol, PERIOD_CURRENT, 1, scan, r) < scan)
+      return 0.0;
+   double best = 0.0;
+   for(int i = 1; i < scan - 1; i++)
+     {
+      if(r[i].time == 0) continue;
+      bool pivot = true;
+      for(int j = i - look; j <= i + look && pivot; j++)
+        {
+         if(j < 0 || j >= scan) continue;
+         if(g_dir > 0) { if(r[j].high > r[i].high) pivot = false; }   // pivot high
+         else          { if(r[j].low  < r[i].low)  pivot = false; }   // pivot low
+        }
+      if(pivot)
+         best = (g_dir > 0) ? r[i].high : r[i].low;   // keep most recent pivot
+     }
+   return best;
+  }
+
+double RetestLevel()
+  {
+   switch(InpRetestMode)
+     {
+      case RT_FIB:
+        {
+         const double span = g_impHigh - g_impLow;
+         if(span <= 0.0)
+            return g_r1[0];
+         return (g_dir > 0) ? (g_impHigh - InpRetestFib * span)
+                            : (g_impLow  + InpRetestFib * span);
+        }
+      case RT_BREAK:
+         return (g_dir > 0) ? g_breakHigh : g_breakLow;
+      case RT_SWING:
+        {
+         const double lvl = SwingRetestLevel();
+         return (lvl > 0.0) ? lvl : g_r1[0];
+        }
+     }
+   return g_r1[0];                                  // RT_EMA (default)
+  }
 
 //+------------------------------------------------------------------+
 //| Small helpers                                                    |
@@ -357,6 +428,7 @@ int OnInit()
    // --- input validation ------------------------------------------------
    if(InpFastEma1Period <= 0 || InpFastEma2Period <= 0 ||
       InpSlowEma1Period <= 0 || InpSlowEma2Period <= 0 ||
+      InpRetestEmaPeriod <= 0 ||
       InpSweepMaxBars        <  1 || InpPinWickRatio      <= 0 ||
       InpRiskRewardRatio     <= 0 || InpMaxStopLossPips   <= 0 ||
       InpRiskPercent         <  0 || InpFixedLots         <= 0 ||
@@ -374,11 +446,13 @@ int OnInit()
    g_hFast2 = iMA(_Symbol, PERIOD_CURRENT, InpFastEma2Period, 0, MODE_EMA, PRICE_CLOSE);
    g_hSlow1 = iMA(_Symbol, PERIOD_CURRENT, InpSlowEma1Period, 0, MODE_EMA, PRICE_CLOSE);
    g_hSlow2 = iMA(_Symbol, PERIOD_CURRENT, InpSlowEma2Period, 0, MODE_EMA, PRICE_CLOSE);
+   g_hRetest = iMA(_Symbol, PERIOD_CURRENT, InpRetestEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    g_hEmaExitFast = iMA(_Symbol, PERIOD_CURRENT, InpEmaExitFastPeriod, 0, MODE_EMA, PRICE_CLOSE);
    g_hEmaExitSlow = iMA(_Symbol, PERIOD_CURRENT, InpEmaExitSlowPeriod, 0, MODE_EMA, PRICE_CLOSE);
    if(g_hFast1 == INVALID_HANDLE || g_hFast2 == INVALID_HANDLE ||
       g_hSlow1 == INVALID_HANDLE || g_hSlow2 == INVALID_HANDLE ||
-      g_hEmaExitFast == INVALID_HANDLE || g_hEmaExitSlow == INVALID_HANDLE)
+      g_hEmaExitFast == INVALID_HANDLE || g_hEmaExitSlow == INVALID_HANDLE ||
+      g_hRetest == INVALID_HANDLE)
      {
       Log("INIT FAILED: could not create EMA indicator handles");
       return(INIT_FAILED);
@@ -433,6 +507,7 @@ void OnDeinit(const int reason)
    if(g_hSlow2 != INVALID_HANDLE) IndicatorRelease(g_hSlow2);
    if(g_hEmaExitFast != INVALID_HANDLE) IndicatorRelease(g_hEmaExitFast);
    if(g_hEmaExitSlow != INVALID_HANDLE) IndicatorRelease(g_hEmaExitSlow);
+   if(g_hRetest != INVALID_HANDLE) IndicatorRelease(g_hRetest);
    if(g_exTotal > 0)
       Log("final exit stats - " + ExitStatsString());
    RestoreBgColor();
@@ -539,12 +614,14 @@ bool FetchMarketData(const int count)
    ArraySetAsSeries(g_f2, true);
    ArraySetAsSeries(g_s1, true);
    ArraySetAsSeries(g_s2, true);
+   ArraySetAsSeries(g_r1, true);
 
    if(CopyRates(_Symbol, PERIOD_CURRENT, 1, count, g_rates) < count) return false;
    if(CopyBuffer(g_hFast1, 0, 1, count, g_f1) < count)               return false;
    if(CopyBuffer(g_hFast2, 0, 1, count, g_f2) < count)               return false;
    if(CopyBuffer(g_hSlow1, 0, 1, count, g_s1) < count)               return false;
    if(CopyBuffer(g_hSlow2, 0, 1, count, g_s2) < count)               return false;
+   if(CopyBuffer(g_hRetest, 0, 1, count, g_r1) < count)              return false;
    return true;
   }
 
@@ -595,6 +672,10 @@ void ResetToIdle(const string reason)
    g_pinHigh      = 0.0;
    g_pinLow       = 0.0;
    g_crackBars    = 0;
+   g_impHigh      = 0.0;
+   g_impLow       = 0.0;
+   g_breakHigh    = 0.0;
+   g_breakLow     = 0.0;
   }
 
 //+------------------------------------------------------------------+
@@ -711,6 +792,10 @@ void EvaluateOnBarClose()
             g_crackBars    = 0;
             g_awaitRecrack = false;
             g_sweptOnce    = false;
+            g_impHigh      = 0.0;
+            g_impLow       = 0.0;
+            g_breakHigh    = 0.0;
+            g_breakLow     = 0.0;
             Log(StringFormat("Phase 2 crack: EMA20 crossed %s EMA50 -> ACCUMULATION",
                              g_dir > 0 ? "above" : "below"));
             break;
@@ -724,6 +809,10 @@ void EvaluateOnBarClose()
       case ST_ACCUM:
         {
          g_crackBars++;
+
+         // track the crack->sweep impulse extremes (for RT_FIB and RT_BREAK)
+         if(g_impHigh == 0.0 || hi > g_impHigh)  g_impHigh = hi;
+         if(g_impLow  == 0.0 || lo < g_impLow)   g_impLow  = lo;
 
          // sweep purity applies until the sweep completes (v1.09 scope: pre-PRIMED only -
          // the retest phase EXPECTS price to travel back through EMA20)
@@ -748,8 +837,10 @@ void EvaluateOnBarClose()
             g_state     = ST_PRIMED;
             g_stateBars = 0;
             g_sweptOnce = true;
-            Log(StringFormat("Phase 3 sweep complete: EMA20 beyond all EMAs after %d bars -> PRIMED | waiting for the EMA150 retest",
-                             g_crackBars));
+            g_breakHigh = hi;    // freeze the sweep-completion bar extreme (RT_BREAK)
+            g_breakLow  = lo;
+            Log(StringFormat("Phase 3 sweep complete: EMA20 beyond all EMAs after %d bars -> PRIMED | waiting for the EMA%d retest",
+                             g_crackBars, InpRetestEmaPeriod));
             break;
            }
 
@@ -776,7 +867,7 @@ void EvaluateOnBarClose()
       // --------------------------------------------------------------
       case ST_PRIMED:
         {
-         // v1.09: entry = retest of EMA150 with a pin bar in the sweep direction.
+         // v1.11: retest level is configurable (InpRetestEmaPeriod), default EMA150.
          // Price is EXPECTED to travel back through EMA20 here, so the purity
          // rule no longer applies; the retest rules take over.
 
@@ -788,16 +879,17 @@ void EvaluateOnBarClose()
             break;
            }
 
-         const bool failClose = (g_dir > 0) ? (cl < e150) : (cl > e150);   // level recaptured
-         const bool touched   = (g_dir > 0) ? (lo <= e150) : (hi >= e150); // price back at EMA150
-         const bool held      = (g_dir > 0) ? (cl > e150)    : (cl < e150);// closed on the sweep side
+         const double er = RetestLevel();                             // retest level (mode-dependent)
+         const bool failClose = (g_dir > 0) ? (cl < er) : (cl > er); // level recaptured
+         const bool touched   = (g_dir > 0) ? (lo <= er) : (hi >= er); // price back at retest level
+         const bool held      = (g_dir > 0) ? (cl > er)    : (cl < er);// closed on the sweep side
 
          if(failClose)
            {
-            g_state        = ST_ACCUM;          // retest failed -> back to accumulation (v1.09)
+            g_state        = ST_ACCUM;          // retest failed -> back to accumulation
             g_awaitRecrack = true;
             g_stateBars    = 0;
-            Log("retest failed: price closed beyond EMA150 -> ACCUMULATION");
+            Log("retest failed: price closed beyond retest EMA -> ACCUMULATION");
             break;
            }
 
@@ -815,7 +907,7 @@ void EvaluateOnBarClose()
 
             if(pin)
               {
-               Log(StringFormat("EMA150 retest with %s pin bar -> entry",
+               Log(StringFormat("EMA%d retest with %s pin bar -> entry", InpRetestEmaPeriod,
                                 g_dir > 0 ? "bullish" : "bearish"));
                TryEnter(g_dir);
               }
@@ -824,7 +916,7 @@ void EvaluateOnBarClose()
                g_state        = ST_ACCUM;      // no pin bar -> back to accumulation (v1.09)
                g_awaitRecrack = true;
                g_stateBars    = 0;
-               Log("EMA150 retested without a pin bar -> ACCUMULATION");
+               Log("retest without a pin bar -> ACCUMULATION");
                break;
               }
            }
@@ -1301,7 +1393,7 @@ void UpdatePanel()
    else if(g_e20 < g_e50 && g_e50 < g_e150 && g_e150 < g_e200)
       stackTxt = "DOWN (E20<E50<E150<E200)";
 
-   string s = "TRAB EA v1.10 | " + _Symbol + " " + EnumToString(_Period) + "\n";
+   string s = "TRAB EA v1.11 | " + _Symbol + " " + EnumToString(_Period) + "\n";
    if(InpAlertOnly)
       s += ">>> ALERT-ONLY MODE: signals are alerted, NO trades are opened <<<\n";
    if(!g_canTrade)
@@ -1319,8 +1411,8 @@ void UpdatePanel()
                         g_sweptOnce ? "yes" : "no",
                         g_awaitRecrack ? "fresh crack" : "sweep completion");
    if(g_state == ST_PRIMED)
-      s += StringFormat("EMA150 retest armed | bars to expiry: %d/%d\n",
-                        g_stateBars, InpSetupExpiryBars);
+      s += StringFormat("EMA%d retest armed | bars to expiry: %d/%d\n",
+                        InpRetestEmaPeriod, g_stateBars, InpSetupExpiryBars);
 
    s += StringFormat("EMA stack: %s\n", stackTxt);
    s += StringFormat("Spread: %.1f pips (max %.1f) | Session: %s\n",

@@ -1,6 +1,6 @@
 # TRAB EA — User Guide
 
-**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.10** · **Timeframe: M1 only**
+**File:** `TRAB_EA.mq5` / `TRAB_EA.ex5` · **Version 1.11** · **Timeframe: M1 only**
 Companion documents: `TRAB_EA_Proposal.md` (formal spec & decision log).
 
 ---
@@ -92,6 +92,10 @@ Every input with its default, what it controls, and when to change it. The defau
 | SweepMaxBars | 12 | Max bars from the crack (EMA20/50 flip) to full sweep completion (EMA20 beyond E150 **and** E200). Encodes "very quick momentum". **Also bounds retest attempts**: each failed retest / no-pin retest cycles back through ACCUMULATION, and the whole crack→sweep→retest lifecycle must fit within this many bars. Minimum 1. |
 | PricePurityTouch | true | **Sweep purity** (applies until the sweep completes, i.e. pre-PRIMED only): from the bar after the crack, price must stay one-sided vs EMA20. `true` = **any touch** (wick reaching EMA20) invalidates the sweep; `false` = only a **close** beyond EMA20 does. After PRIMED this rule is off — the retest phase expects price to travel back through EMA20 |
 | PinWickRatio | 2.0 | Pin-bar definition at the EMA150 retest: the rejection wick (upper wick for a short, lower wick for a long) must be ≥ this ratio × the candle body, and the close must be in the rejection half of the candle. Raise = demand purer rejections; lower = accept shallower pins |
+| RetestEmaPeriod | 150 | Retest EMA period used by the retest level (`RetestMode = EMA`). Lower (e.g. 100, 50) = shallower retest = earlier entry, smaller SL, but more setups; 150 = deep. |
+| RetestMode | EMA (0) | **Retest level source (v1.11).** `0` EMA (`RetestEmaPeriod`), `1` Fib — `RetestFib` % retracement of the crack→sweep impulse, `2` Breakout — the sweep-completion bar's extreme (break-and-retest), `3` Swing — the most recent zigzag pivot high/low. The pin-bar confirmation is identical for every mode. |
+| RetestFib | 0.382 | Fibonacci retracement fraction of the crack→sweep impulse used by `RetestMode = Fib`. 0.382 = shallow, 0.5 = mid, 0.618 = deep. |
+| SwingBars | 3 | Half-width (bars each side) of the zigzag pivot used by `RetestMode = Swing` to detect a swing high/low. |
 
 ### Entry
 | Input | Default | Usage |
