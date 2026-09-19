@@ -324,3 +324,41 @@ supersedes the viability assumption in §1/§7 and **blocks live deployment**
 until a real entry-rework (a genuine filter to lift win rate above breakeven,
 or a higher-reward / multi-TP structure that holds EV positive) is validated.
 See AGENTS.md → Backtesting for the reproducible headless-run + parsing recipe.
+
+### Research findings — full headless test campaign (2026, supersedes the note above)
+
+Reproducible headless Strategy-Tester runs (Model=4, real ticks) on the local and
+remote machines (see AGENTS.md → Backtesting / remote-SSH section).
+
+- **M1 reversal premise has no edge.** Across ~50 configs (retest source
+  EMA/Fib/breakout/swing, exit, pin, reward, MTF filter) the win rate stayed
+  ~18–33% (below the ~33% break-even for 2R); the best was near-breakeven
+  (M15 trend filter, PF 0.85). Never profitable.
+- **M1/M15 entries are cost-dominated.** Small ATR stops incur ~0.3R spread per
+  trade; only a wide-SL H1 breakout escapes the cost wall. Structural, not
+  tunable.
+- **Trend-following beats mean-reversion** (aligns with modern practice). The
+  H1 Donchian breakout (channel 10, no trend filter, ATR stop, trailing exit)
+  was the first profitable config: **PF 1.19 (EURUSD), 1.55 (USDCAD), 1.12
+  (USDJPY)** on 2023–25. **Trailing-only** exits beat every fixed-TP / breakeven
+  / hit-and-run alternative tested.
+- **BUT the edge is regime-dependent, not durable.** Extended to **2018–2026**,
+  EURUSD drops to ~**PF 0.85–0.96** (a loss). The 2023–25 profit was concentrated
+  in a strong-trending regime; over the full cycle (2018–21 chop, 2020 & 2022
+  volatility) it does not hold. This is the classic signature of
+  **curve-fitting to a favorable backtest window** — the apparent alpha is mostly
+  regime exposure, not a persistent edge.
+- **ML/feature filters don't rescue it.** A gradient-boosted entry filter
+  (pooled profitable pairs, 12–18 features incl. ADX, RSI, EMA slope, vol
+  regime, ATR) improved out-of-sample PF on the 2023–25 window (AUC ~0.576,
+  filtered PF ~1.9), but the discriminator is **weak (AUC ~0.58)**, **adding
+  features overfits** (AUC drops to ~0.53), and it was built on a strategy that
+  doesn't survive a longer window — so any gain is period-specific too.
+
+**Verdict.** No strategy tested demonstrates a durable, robust statistical edge;
+the profitable breakout is very likely **regime-dependent**. This blocks live
+deployment (a stronger form of the §7 caution). Treat the 2023–25 backtest
+profit as regime exposure, not proof of alpha. The only meaningful forward
+validation is a **multi-month demo forward-test** (e.g., the USDCAD breakout,
+PF 1.55 / low DD), ideally gated behind a **trend-regime filter** that itself
+survives out-of-sample. **Do not allocate live capital on backtest results alone.**
