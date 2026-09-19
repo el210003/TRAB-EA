@@ -26,7 +26,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "TRAB"
 #property link        ""
-#property version     "1.09"
+#property version     "1.10"
 #property description "M1 Trend Reversal & Accumulation Breakout EA"
 #property description "Sequential EMA-configuration state machine: Stack -> Crack -> Sweep -> Retest entry."
 #property description "Runs on the chart symbol. M1 timeframe only."
@@ -97,6 +97,11 @@ input color  InpExhaustedBgColor      = clrSaddleBrown;  // TRENDING tint (amber
 input color  InpAccumBgColor          = clrMidnightBlue; // ACCUMULATION tint (dark blue)
 input color  InpPrimedLongBg          = clrDarkGreen;    // PRIMED long tint (dark green)
 input color  InpPrimedShortBg         = clrDarkRed;      // PRIMED short tint (dark red)
+
+input group "=== Debug ==="
+input bool   InpDrawCrossLines       = true;       // Debug: vline at EMA20xEMA50 & EMA20xEMA150 crosses
+input color  InpCross50Color         = clrOrange;  // Vline color: EMA20 x EMA50 cross
+input color  InpCross150Color        = clrMagenta; // Vline color: EMA20 x EMA150 cross
 
 //+------------------------------------------------------------------+
 //| State machine                                                    |
@@ -450,10 +455,60 @@ void OnTick()
    if(newBar && g_canTrade)
       EvaluateOnBarClose();
 
+   if(newBar)                       // debug cross markers (bar-close only)
+      DrawCrossLines();
+
    if(InpShowPanel)
       UpdatePanel();
 
    ApplyStateColor();       // no-op unless the state (and thus tint) changed
+  }
+
+//+------------------------------------------------------------------+
+//| Debug: stamp a vline at EMA20 x EMA50 and EMA20 x EMA150 crosses |
+//| Detects a sign flip of the pair separation on each closed bar vs |
+//| its predecessor; chart-only, no effect on trading logic.          |
+//+------------------------------------------------------------------+
+void StampVLine(const datetime t, const string tag, const color col)
+  {
+   const string name = StringFormat("TRABX_%s_%s", tag, (string)(long)t);
+   if(ObjectFind(0, name) < 0)
+     {
+      ObjectCreate(0, name, OBJ_VLINE, 0, t, 0);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+      ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DOT);
+      ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, name, OBJPROP_BACK, false);
+      ObjectSetString(0, name, OBJPROP_TOOLTIP, "TRAB " + tag);
+     }
+  }
+
+void DrawCrossLines()
+  {
+   if(!InpDrawCrossLines)
+      return;
+   double f1[], f2[], s1[];
+   ArraySetAsSeries(f1, true);
+   ArraySetAsSeries(f2, true);
+   ArraySetAsSeries(s1, true);
+   if(CopyBuffer(g_hFast1, 0, 1, 2, f1) < 2) return;
+   if(CopyBuffer(g_hFast2, 0, 1, 2, f2) < 2) return;
+   if(CopyBuffer(g_hSlow1, 0, 1, 2, s1) < 2) return;
+
+   // index 0 = last CLOSED bar, index 1 = its predecessor
+   const double d20_50   = f1[0] - f2[0];
+   const double p20_50   = f1[1] - f2[1];
+   const double d20_150  = f1[0] - s1[0];
+   const double p20_150  = f1[1] - s1[1];
+
+   const datetime t = iTime(_Symbol, PERIOD_CURRENT, 1);   // last closed bar time
+   if(t == 0)
+      return;
+
+   if((d20_50  > 0.0) != (p20_50  > 0.0))      // EMA20 crossed EMA50
+      StampVLine(t, "E20xE50", InpCross50Color);
+   if((d20_150 > 0.0) != (p20_150 > 0.0))      // EMA20 crossed EMA150
+      StampVLine(t, "E20xE150", InpCross150Color);
   }
 
 //+------------------------------------------------------------------+
@@ -1240,7 +1295,7 @@ void UpdatePanel()
    else if(g_e20 < g_e50 && g_e50 < g_e150 && g_e150 < g_e200)
       stackTxt = "DOWN (E20<E50<E150<E200)";
 
-   string s = "TRAB EA v1.08 | " + _Symbol + " " + EnumToString(_Period) + "\n";
+   string s = "TRAB EA v1.10 | " + _Symbol + " " + EnumToString(_Period) + "\n";
    if(InpAlertOnly)
       s += ">>> ALERT-ONLY MODE: signals are alerted, NO trades are opened <<<\n";
    if(!g_canTrade)
