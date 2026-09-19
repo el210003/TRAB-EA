@@ -907,7 +907,7 @@ void EvaluateOnBarClose()
 
             if(pin)
               {
-               Log(StringFormat("EMA%d retest with %s pin bar -> entry", InpRetestEmaPeriod,
+               Log(StringFormat("retest with %s pin bar -> entry",
                                 g_dir > 0 ? "bullish" : "bearish"));
                TryEnter(g_dir);
               }
