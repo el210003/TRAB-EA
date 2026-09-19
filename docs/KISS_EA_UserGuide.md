@@ -1,6 +1,6 @@
 # KISS EA — SMC/ICT Liquidity Sweep + Pin/Engulfing Entry
 
-**M15 Expert Advisor for MetaTrader 5** · Version 1.02
+**M15 Expert Advisor for MetaTrader 5** · Version 1.03
 
 KISS ("Keep It Simple, Stupid") is a minimal **Smart Money Concepts (SMC) /
 Inner Circle Trader (ICT)-style** strategy: it hunts **liquidity sweeps** of the
@@ -12,21 +12,25 @@ stays four rules deep.
 > **Status:** experimental / research EA. Trade on demo first. No performance
 > guarantee — see the [Disclaimer](#-disclaimer).
 >
-> **Backtest campaign (v1.02 baseline, remote MT5 real ticks, 2023-01 →
-> 2025-12, 1 % risk, bias on, no session/trailing):**
+> **Backtest campaign (baseline, remote MT5 real ticks, 2023-01 → 2025-12,
+> 1 % risk, bias on, no session/trailing):**
 >
-> | Symbol | Trades | Win % | PF(R) | sumR | Final balance |
-> |---|---|---|---|---|---|
-> | EURUSD | 934 | 29.9 % | **0.84** | −110 R | $3,047 (−70 %) |
-> | XAUUSD | 1,115 | 34.3 % | **1.03** | +22 R | $11,091 (+11 %) |
+> | Symbol | Bias | Trades | Win % | PF(R) | sumR | Final balance |
+> |---|---|---|---|---|---|---|
+> | EURUSD | v1.02 H1 EMA50 | 934 | 29.9 % | 0.84 | −110 R | $3,047 (−70 %) |
+> | EURUSD | **v1.03 H4 structure** | 1,023 | 31.0 % | **0.88** | −89 R | $3,677 (−63 %) |
+> | XAUUSD | v1.02 H1 EMA50 | 1,115 | 34.3 % | 1.00 | +22 R | $11,091 (+11 %) |
+> | XAUUSD | **v1.03 H4 structure** | 1,280 | 35.9 % | **1.11** | **+91 R** | $21,617 (+116 %) |
 >
-> EURUSD loses consistently in **every** year (31.9 % / 27.5 % / 29.9 % win);
-> XAUUSD is statistically breakeven (34.3 % ≈ the 33.3 % break-even at 1:2 +
-> costs). **No durable edge at the baseline settings** — consistent with the
-> cost-wall finding in [`RESEARCH.md`](RESEARCH.md). The SL floors worked as
-> designed (median loss −1.00 R, p95 win +2.02 R; only gap outliers beyond
-> ±3 R on gold). Next research levers: session filter (killzones), trailing,
-> swing-strength/sweep lookback grids, bias TF/period.
+> The H4 structure bias improved both symbols (EURUSD PF 0.84 → 0.88 and 2023
+> flipped positive; XAUUSD PF 1.00 → 1.11 with +91 R and two of three years
+> positive). EURUSD still **loses overall** — 2024 chop is its killer (−78 R)
+> while the same year was gold's best (+69 R): the effect is
+> instrument-specific and thin (XAUUSD avg +0.07 R/trade). Not validated
+> out-of-sample; do not treat as a durable edge. The SL floors worked as
+> designed throughout (median loss −1.00 R, p95 win ≈ +2.0 R; only gap
+> outliers beyond ±3 R on gold). Next levers: session killzones, trailing,
+> bias strength/lookback grids, per-symbol deployment.
 
 ---
 
@@ -103,7 +107,7 @@ Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 
 | Filter | Default | Behaviour |
 |---|---|---|
-| **HTF bias** (`UseBiasFilter`) | **on** | H1 EMA(`BiasEmaPeriod`): longs only when the last closed M15 close is above the EMA, shorts only below. ICT-style: take the reversal *toward* the higher-TF draw. |
+| **HTF structure bias** (`UseBiasFilter`) | **on** | **H4 fractal market structure** (no indicators): the most recent *confirmed* H4 swing event decides the regime — a swing high that made a **HH**, or a swing low that held as a **HL**, is **bullish**; a swing high that made a **LH** (or failed to exceed the prior high — "leaving the HH"), or a swing low that broke down (**LL**), is **bearish**. Longs only in bullish structure, shorts only in bearish. A fresh event flips the bias as soon as it is confirmed (`BiasSwingStrength` H4 bars have closed past it — no repaint). |
 | **Session window** (`UseSessionFilter`) | off | Restrict entries to `[SessStartHour, SessEndHour)` **broker server time** (ICT killzone analog). Wraps midnight if start > end. Server-time offset is broker-dependent — verify before use. |
 | **ATR trailing** (`UseTrailing`) | off | Activates at `TrailActivateRR` × initial risk, then trails `TrailATRMult` × ATR behind price (ratchet only; TP is preserved). |
 | **Time stop** (`MaxBarsInTrade`) | 0 = off | Force-close after N entry-TF bars in trade. |
@@ -119,9 +123,10 @@ Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 | `InpUseEngulfing` | `true` | Enable engulfing confirmation. |
 | `InpPinWickRatio` | `2.0` | Pin: rejection wick ≥ ratio × body. |
 | `InpMinRangeATR` | `0.5` | Min confirm-candle range in ATRs (noise gate; 0 disables). |
-| `InpUseBiasFilter` | `true` | Higher-TF EMA bias gate (see table above). |
-| `InpBiasTF` | `H1` | Bias timeframe. |
-| `InpBiasEmaPeriod` | `50` | Bias EMA period. |
+| `InpUseBiasFilter` | `true` | Higher-TF structure bias gate (see table above). |
+| `InpBiasTF` | `H4` | Bias timeframe (fractal market structure). |
+| `InpBiasSwingStrength` | `2` | Bias fractal strength (bars each side of an H4 pivot). |
+| `InpBiasLookback` | `120` | Bars scanned for bias pivots (~20 days of H4). |
 | `InpUseSessionFilter` | `false` | Restrict entries to the session window. |
 | `InpSessStartHour` / `InpSessEndHour` | `7` / `20` | Window in **server** hours; wraps midnight. |
 | `InpATRPeriod` | `14` | ATR period on the entry TF (SL buffer, trailing). |
@@ -158,7 +163,7 @@ For headless backtest parsing the EA logs:
 - SL widened by a floor: `SL widened to floor: 2.2 -> 6.7 pips (spread 1.0 pips = 15% of SL)`
 - per-trade: `position #N CLOSED - net +1.87R / 43.10 USD`
 - rejections: `ENTRY ABORTED: spread …` / `ENTRY ABORTED: outside session …` /
-  `ENTRY ABORTED: long against PERIOD_H1 EMA50 bias (…)` /
+  `ENTRY ABORTED: long against PERIOD_H4 structure bias (LL 1.07430 @ 2024.02.27 12:00)` /
   `TRADE SKIPPED: invalid SL geometry vs sweep extreme` / `TRADE SKIPPED: lot size …`
 
 ## Backtesting

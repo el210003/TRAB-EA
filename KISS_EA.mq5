@@ -19,7 +19,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "KISS"
 #property link        ""
-#property version     "1.02"
+#property version     "1.03"
 #property description "SMC/ICT liquidity sweep + pin bar / engulfing confirmation, M15 entry"
 #include <Trade\Trade.mqh>
 
@@ -33,9 +33,10 @@ input double InpPinWickRatio          = 2.0;         // Pin: rejection wick >= x
 input double InpMinRangeATR           = 0.5;         // Min confirm-candle range = x ATR (noise gate)
 
 input group "=== HTF Bias & Session (optional) ==="
-input bool   InpUseBiasFilter         = true;        // Only trade with the higher-TF EMA bias
-input ENUM_TIMEFRAMES InpBiasTF       = PERIOD_H1;   // Bias timeframe
-input int    InpBiasEmaPeriod         = 50;          // Bias EMA period
+input bool   InpUseBiasFilter         = true;        // Only trade with the higher-TF structure bias
+input ENUM_TIMEFRAMES InpBiasTF       = PERIOD_H4;   // Bias timeframe (fractal structure)
+input int    InpBiasSwingStrength     = 2;           // Bias fractal strength (bars each side)
+input int    InpBiasLookback          = 120;         // Bars scanned for bias swings
 input bool   InpUseSessionFilter      = false;       // Restrict to a server-hour window
 input int    InpSessStartHour         = 7;           // Session start hour (server time)
 input int    InpSessEndHour           = 20;          // Session end hour (server time, wraps midnight)
@@ -61,7 +62,7 @@ input bool   InpShowPanel             = true;        // Show chart panel
 
 //+------------------------------------------------------------------+
 CTrade g_trade;
-int    g_hATR = INVALID_HANDLE, g_hBiasEma = INVALID_HANDLE;
+int    g_hATR = INVALID_HANDLE;
 double g_point = 0.0, g_pip = 0.0;
 int    g_digits = 0;
 datetime g_lastBar = 0;
@@ -70,6 +71,7 @@ double g_initialRisk = 0.0; bool g_trailActive = false;
 double g_volume = 0.0;      // position volume (for true R math incl. costs)
 int    g_barsIn = 0;
 string g_lastSetup = "-";   // last confirmed setup (for the panel)
+string g_biasDesc = "-";    // last HTF structure event (for panel + abort logs)
 
 void Log(const string m) { Print("KISS: ", m); }
 double PipToPrice(double p) { return p * g_pip; }
@@ -84,10 +86,11 @@ int OnInit()
    g_pip = (g_digits == 3 || g_digits == 5) ? g_point * 10.0 : g_point;
    if(g_point <= 0.0 || g_pip <= 0.0) { Log("INIT FAILED: point/pip"); return INIT_FAILED; }
    if(InpSwingStrength < 1 || InpSweepLookback < 2 * InpSwingStrength + 3 ||
+      InpBiasSwingStrength < 1 || InpBiasLookback < 2 * InpBiasSwingStrength + 4 ||
       InpATRPeriod <= 0 || InpRewardRR <= 0.0 || InpRiskPercent < 0.0 || InpFixedLots <= 0.0 ||
       InpSLBufferATRMult < 0.0 || InpMinStopATRMult < 0.0 || InpPinWickRatio <= 0.0 || InpMinRangeATR < 0.0 ||
       InpMaxSpreadToSLPct < 0.0 || InpMaxSpreadToSLPct > 100.0 ||
-      InpMaxSpreadPips <= 0.0 || InpBiasEmaPeriod <= 0 ||
+      InpMaxSpreadPips <= 0.0 ||
       InpTrailActivateRR <= 0.0 || InpTrailATRMult <= 0.0 || InpMaxBarsInTrade < 0)
      { Log("INIT FAILED: invalid inputs"); return INIT_PARAMETERS_INCORRECT; }
    if(!InpUsePinBar && !InpUseEngulfing)
@@ -95,14 +98,13 @@ int OnInit()
    if(InpUseSessionFilter && (InpSessStartHour < 0 || InpSessStartHour > 23 || InpSessEndHour < 0 || InpSessEndHour > 23 || InpSessStartHour == InpSessEndHour))
      { Log("INIT FAILED: session hours"); return INIT_PARAMETERS_INCORRECT; }
    g_hATR = iATR(_Symbol, InpEntryTF, InpATRPeriod);
-   g_hBiasEma = iMA(_Symbol, InpBiasTF, InpBiasEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
-   if(g_hATR == INVALID_HANDLE || g_hBiasEma == INVALID_HANDLE)
+   if(g_hATR == INVALID_HANDLE)
      { Log("INIT FAILED: handles"); return INIT_FAILED; }
    g_trade.SetExpertMagicNumber((ulong)InpMagic);
    g_trade.LogLevel(LOG_LEVEL_ERRORS);
-   Log(StringFormat("initialized | %s sweep + pin/engulf @ %s | swing %d, lookback %d | bias %s EMA%d %s | SL buf %.2f ATR (floor %.1f, spread<=%.0f%% of SL), TP %.1fR | trail %s",
+   Log(StringFormat("initialized | %s sweep + pin/engulf @ %s | swing %d, lookback %d | bias %s struct(sw%d, lb%d) %s | SL buf %.2f ATR (floor %.1f, spread<=%.0f%% of SL), TP %.1fR | trail %s",
                     EnumToString(InpEntryTF), _Symbol, InpSwingStrength, InpSweepLookback,
-                    EnumToString(InpBiasTF), InpBiasEmaPeriod, InpUseBiasFilter ? "ON" : "off",
+                    EnumToString(InpBiasTF), InpBiasSwingStrength, InpBiasLookback, InpUseBiasFilter ? "ON" : "off",
                     InpSLBufferATRMult, InpMinStopATRMult, InpMaxSpreadToSLPct, InpRewardRR, InpUseTrailing ? "on" : "off"));
    Adopt();
    return INIT_SUCCEEDED;
@@ -110,7 +112,6 @@ int OnInit()
 void OnDeinit(const int r)
   {
    if(g_hATR != INVALID_HANDLE) IndicatorRelease(g_hATR);
-   if(g_hBiasEma != INVALID_HANDLE) IndicatorRelease(g_hBiasEma);
    Comment("");
   }
 bool IsNewBar() { datetime t = iTime(_Symbol, InpEntryTF, 0); if(t == 0 || t == g_lastBar) return false; g_lastBar = t; return true; }
@@ -139,12 +140,12 @@ bool InSession(const datetime t)
 //| strictly dominates all bars within InpSwingStrength on both      |
 //| sides; needs `strength` closed bars to its right (confirmed).    |
 //+------------------------------------------------------------------+
-bool FindSwing(const MqlRates &r[], const int n, const int fromIdx, const bool wantHigh, int &idx)
+bool FindSwing(const MqlRates &r[], const int n, const int fromIdx, const bool wantHigh, const int strength, int &idx)
   {
-   for(int a = MathMax(fromIdx, InpSwingStrength); a <= n - 1 - InpSwingStrength; a++)
+   for(int a = MathMax(fromIdx, strength); a <= n - 1 - strength; a++)
      {
       bool ok = true;
-      for(int k = 1; k <= InpSwingStrength && ok; k++)
+      for(int k = 1; k <= strength && ok; k++)
         {
          if(wantHigh) { if(r[a].high <= r[a - k].high || r[a].high <= r[a + k].high) ok = false; }
          else         { if(r[a].low  >= r[a - k].low  || r[a].low  >= r[a + k].low)  ok = false; }
@@ -152,6 +153,39 @@ bool FindSwing(const MqlRates &r[], const int n, const int fromIdx, const bool w
       if(ok) { idx = a; return true; }
      }
    return false;
+  }
+
+//+------------------------------------------------------------------+
+//| HTF structure bias (Dow/ICT): the most recent CONFIRMED swing    |
+//| event on the bias TF decides the regime - a swing HIGH that made |
+//| a HH (or a swing LOW that held as HL) is bullish; a LH (leaving  |
+//| the HH behind) or a LL is bearish. Strict > compare: an equal    |
+//| high/low counts as failure (bearish/bullish respectively).       |
+//| Returns +1 / -1, or 0 when history is insufficient.              |
+//+------------------------------------------------------------------+
+int StructureBias(string &desc)
+  {
+   const int n = InpBiasLookback + 2 * InpBiasSwingStrength + 4;
+   MqlRates r[]; ArraySetAsSeries(r, true);
+   if(CopyRates(_Symbol, InpBiasTF, 1, n, r) < n) { desc = "history n/a"; return 0; }
+   int hNew = -1, hOld = -1, lNew = -1, lOld = -1;
+   if(!FindSwing(r, n, 0, true, InpBiasSwingStrength, hNew) ||
+      !FindSwing(r, n, hNew + 1, true, InpBiasSwingStrength, hOld) ||
+      !FindSwing(r, n, 0, false, InpBiasSwingStrength, lNew) ||
+      !FindSwing(r, n, lNew + 1, false, InpBiasSwingStrength, lOld))
+     { desc = "history n/a"; return 0; }
+   const bool highIsRecent = (hNew < lNew);          // series index: smaller = more recent
+   if(highIsRecent)
+     {
+      const bool hh = r[hNew].high > r[hOld].high;
+      desc = StringFormat("%s %s @ %s", hh ? "HH" : "LH", DoubleToString(r[hNew].high, g_digits),
+                          TimeToString(r[hNew].time, TIME_DATE | TIME_MINUTES));
+      return hh ? +1 : -1;
+     }
+   const bool hl = r[lNew].low > r[lOld].low;
+   desc = StringFormat("%s %s @ %s", hl ? "HL" : "LL", DoubleToString(r[lNew].low, g_digits),
+                       TimeToString(r[lNew].time, TIME_DATE | TIME_MINUTES));
+   return hl ? +1 : -1;
   }
 
 //+------------------------------------------------------------------+
@@ -204,7 +238,7 @@ bool DetectSetup(const MqlRates &r[], const int n, const int sa, const int dir, 
                  double &sweepLevel, double &extreme, string &pattern)
   {
    int pi = -1;                                   // liquidity pool = most recent confirmed swing OLDER than the sweep bar
-   if(!FindSwing(r, n, sa + 1, dir < 0, pi)) return false;
+   if(!FindSwing(r, n, sa + 1, dir < 0, InpSwingStrength, pi)) return false;
    const double L = (dir > 0) ? r[pi].low : r[pi].high;
    const bool swept = (dir > 0) ? (r[sa].low < L && r[sa].close > L)     // wick below the pool, close back above
                                 : (r[sa].high > L && r[sa].close < L);   // wick above the pool, close back below
@@ -241,14 +275,14 @@ void Evaluate()
    g_lastSetup = StringFormat("%s %s of swing %s | %s",
                               dir > 0 ? "BUY" : "SELL", dir > 0 ? "sell-side sweep" : "buy-side sweep",
                               DoubleToString(sweepLevel, g_digits), pattern);
-   TryEnter(dir, sweepLevel, extreme, pattern, sweepTime, r[0].close);
+   TryEnter(dir, sweepLevel, extreme, pattern, sweepTime);
   }
 
 //+------------------------------------------------------------------+
 //| Entry gate: spread / session / bias / geometry / sizing          |
 //+------------------------------------------------------------------+
 void TryEnter(const int dir, const double sweepLevel, const double extreme, const string pattern,
-              const datetime sweepTime, const double lastClose)
+              const datetime sweepTime)
   {
    MqlTick tick; if(!SymbolInfoTick(_Symbol, tick)) return;
    const double spread = (tick.ask - tick.bid) / g_pip;
@@ -259,12 +293,10 @@ void TryEnter(const int dir, const double sweepLevel, const double extreme, cons
        Log(StringFormat("ENTRY ABORTED: outside session %02d-%02dh (server hour %02d)", InpSessStartHour, InpSessEndHour, dt.hour)); return; }
    if(InpUseBiasFilter)
      {
-      double be[]; ArraySetAsSeries(be, true);
-      if(CopyBuffer(g_hBiasEma, 0, 1, 1, be) < 1) return;
-      const bool longOk = lastClose > be[0], shortOk = lastClose < be[0];
-      if((dir > 0 && !longOk) || (dir < 0 && !shortOk))
-        { Log(StringFormat("ENTRY ABORTED: %s against %s EMA%d bias (%.5f)", dir > 0 ? "long" : "short",
-                           EnumToString(InpBiasTF), InpBiasEmaPeriod, be[0])); return; }
+      const int bias = StructureBias(g_biasDesc);
+      if((dir > 0 && bias <= 0) || (dir < 0 && bias >= 0))
+        { Log(StringFormat("ENTRY ABORTED: %s against %s structure bias (%s)", dir > 0 ? "long" : "short",
+                           EnumToString(InpBiasTF), g_biasDesc)); return; }
      }
    double atr[]; ArraySetAsSeries(atr, true);
    if(CopyBuffer(g_hATR, 0, 1, 1, atr) < 1 || atr[0] <= 0.0) return;
@@ -403,21 +435,19 @@ void Panel()
    if(CopyRates(_Symbol, InpEntryTF, 1, n, r) >= n)
      {
       int pi = -1;
-      if(FindSwing(r, n, 0, true, pi)) swHi = r[pi].high;
-      if(FindSwing(r, n, 0, false, pi)) swLo = r[pi].low;
+      if(FindSwing(r, n, 0, true, InpSwingStrength, pi)) swHi = r[pi].high;
+      if(FindSwing(r, n, 0, false, InpSwingStrength, pi)) swLo = r[pi].low;
      }
    string bias = "off";
    if(InpUseBiasFilter)
      {
-      double be[]; ArraySetAsSeries(be, true);
-      if(CopyBuffer(g_hBiasEma, 0, 1, 1, be) >= 1)
-        { const double cl = iClose(_Symbol, InpEntryTF, 1);
-          bias = (cl > be[0]) ? "long-only" : (cl < be[0] ? "short-only" : "neutral"); }
-      else bias = "n/a";
+      const int b = StructureBias(g_biasDesc);
+      bias = (b > 0) ? "long-only" : (b < 0 ? "short-only" : "unknown");
+      bias += " (" + g_biasDesc + ")";
      }
    string sess = "off";
    if(InpUseSessionFilter) sess = InSession(TimeCurrent()) ? "OPEN" : "closed";
-   string s = "KISS-EA v1.02 | " + _Symbol + " " + EnumToString(InpEntryTF) + " SMC sweep\n";
+   string s = "KISS-EA v1.03 | " + _Symbol + " " + EnumToString(InpEntryTF) + " SMC sweep\n";
    s += StringFormat("Liquidity: swing high %s | swing low %s\n",
                      swHi > 0.0 ? DoubleToString(swHi, g_digits) : "-", swLo > 0.0 ? DoubleToString(swLo, g_digits) : "-");
    s += StringFormat("Bias: %s | Session: %s | Pos: %s\n", bias, sess, g_ticket != 0 ? "OPEN" : "flat");
