@@ -506,9 +506,15 @@ void DrawCrossLines()
       return;
 
    if((d20_50  > 0.0) != (p20_50  > 0.0))      // EMA20 crossed EMA50
+     {
       StampVLine(t, "E20xE50", InpCross50Color);
+      Log(StringFormat("DEBUG cross E20xE50 @ %s", TimeToString(t, TIME_DATE | TIME_MINUTES)));
+     }
    if((d20_150 > 0.0) != (p20_150 > 0.0))      // EMA20 crossed EMA150
+     {
       StampVLine(t, "E20xE150", InpCross150Color);
+      Log(StringFormat("DEBUG cross E20xE150 @ %s", TimeToString(t, TIME_DATE | TIME_MINUTES)));
+     }
   }
 
 //+------------------------------------------------------------------+

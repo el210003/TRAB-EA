@@ -165,11 +165,11 @@ Session filter gates **priming and entry only** — open positions are still man
 ### Debug (chart markers)
 | Input | Default | Usage |
 |---|---|---|
-| DrawCrossLines | true | **Debug aid (v1.10).** Stamps a dotted vertical line on the chart at every closed bar where EMA20 crossed EMA50 (orange) and where EMA20 crossed EMA150 (magenta). Chart-only — no effect on signals, entries or exits. Turn `false` in production for a clean chart. |
+| DrawCrossLines | true | **Debug aid (v1.10).** On each closed bar where EMA20 crossed EMA50 (orange) or EMA20 crossed EMA150 (magenta) it stamps a dotted vertical line **and logs a journal line** (`DEBUG cross E20xE50 @ ...`). Chart objects do **not** render in the Strategy Tester, so the journal line is the way to inspect crosses in a backtest. `false` = off. |
 | Cross50Color | clrOrange | Vertical-line color for an EMA20×EMA50 cross. |
 | Cross150Color | clrMagenta | Vertical-line color for an EMA20×EMA150 cross. |
 
-> All marker objects are named `TRABX_<tag>_<time>` and are never touched by the trading logic or the state machine, so they can be cleared freely (or set `DrawCrossLines=false` to stop drawing). Detection runs once per closed M1 bar.
+> All marker objects are named `TRABX_<tag>_<time>` and are never touched by the trading logic or the state machine, so they can be cleared freely (or set `DrawCrossLines=false` to stop drawing). Detection runs once per closed M1 bar. **Note:** MT5's Strategy Tester does not render EA-drawn chart objects — to review crosses in a backtest, read the `DEBUG cross ...` journal lines instead.
 
 All colors are ordinary MQL5 `color` inputs — type any `clrXXX` web-color name or pick from the color chooser in the EA dialog. `None` in the chooser = `clrNONE` = leave the original background. The original background is always restored when the EA is removed.
 
