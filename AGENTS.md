@@ -103,6 +103,18 @@ cmd //c start "" '<path>\terminal64.exe' "/config:<abs path>\Tester\trab_backtes
     <R>R total | TP ... | Trail ... | Cross ... | SL ...`
 - The `.tst` file in `<Data Folder>\Tester\cache\` is the raw test result
   (`TRAB_EA.EURUSD.M1.<from>_<to>.4.<hash>.tst`) — a good success indicator.
+- **IMPORTANT — clean up after you finish testing/analysis.** The Strategy
+  Tester writes large transient artifacts to `<Data Folder>\Tester\cache\`
+  (`.tst`, can be ~2 GB), `<Data Folder>\Tester\logs\` (daily journals) and the
+  agent mirrors under `<MetaQuotes Data>\Tester\...\Agent-*\logs\`. When the
+  backtest + analysis is **complete**, wipe them to free disk (C: tends to run
+  tight here). Helper script on E:\tmp:\
+  `bash /e/tmp/clean.sh` — removes cache `.tst`, tester journals, agent mirrors,
+  and the per-test `.ini` configs.
+  It **keeps** the history bases (`bases/`) and the EA repo
+  (`MQL5\Experts\EMA-Trading`), and refuses to run while `terminal64`/
+  `metatester` are running. Only run it once you've extracted the numbers
+  you need (results are logged to the journal, which the cleanup deletes).
 - **Isolating one run from another in the shared daily log:** snapshot the
   `grep -c "position #[0-9]+ CLOSED"` count just before the launch, then after the
   run take only lines `N0+1..N1` (chronological). Each single-parameter run adds
