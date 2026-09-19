@@ -7,7 +7,7 @@ TRAB is a three-phase reversal strategy for M1 charts, built as a **pure EMA-con
 > **Status:** experimental / research EA. Trade on demo first. No performance guarantee — see [Disclaimer](#-disclaimer).
 
 > **Research status (2026):** extensive headless backtesting (see
-> [`docs/TRAB_EA_Proposal.md`](docs/TRAB_EA_Project.md) → *Research findings*)
+> [`docs/TRAB_EA_Proposal.md`](docs/TRAB_EA_Proposal.md) → *Research findings*)
 > found the M1 reversal premise has **no robust edge**. A separate **H1 Donchian
 > breakout** prototype (`TRAB_Breakout.mq5`) was profitable in 2023–25
 > (EURUSD PF 1.19, USDCAD 1.55, USDJPY 1.12) but **did not survive a 2018–2026
