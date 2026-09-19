@@ -110,8 +110,10 @@ Entries are gated to the London (08:00–16:59) and New York (13:00–20:59) win
 
 ```
 TRAB-EA/
-├── TRAB_EA.mq5                     # Full source (MQL5)
-├── TRAB_EA.ex5                     # Prebuilt v1.12 (drop into MQL5\Experts)
+├── TRAB_EA.mq5 / TRAB_EA.ex5       # M1 EMA reversal + pin (original, no edge — see RESEARCH.md)
+├── TRAB_Breakout.mq5 / .ex5        # H1 Donchian breakout (research prototype; profitable 2023-25 but REGIME-DEPENDENT)
+├── TRAB_Swing.mq5 / .ex5           # H4 trend + M15 entry (research prototype, did not work)
+├── TRAB_SnR.mq5 / .ex5             # H4 S/R + M1 EMA (research prototype, did not work)
 ├── docs/
 │   ├── TRAB_EA_Proposal.md         # Formal spec & decision log
 │   ├── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting
@@ -119,8 +121,17 @@ TRAB-EA/
 └── preset/
     ├── TRAB_baseline_FX.set
     ├── TRAB_baseline_XAUUSD.set
-    └── TRAB_optimize_walkforward.set
+    ├── TRAB_optimize_walkforward.set
+    └── TRAB_baseline_breakout.set  # H1 Donchian breakout demo preset (see RESEARCH.md)
 ```
+
+### Note on the research prototypes
+`TRAB_Breakout` is the only prototype that was profitable in backtest (2023–25:
+EURUSD PF 1.19, USDCAD 1.55, USDJPY 1.12), but it is **regime-dependent** — it
+failed a 2018–2026 window (PF ≈ 0.85–0.96). The original `TRAB_EA` had **no edge**.
+Forward-test the breakout on a **demo** (recommend USDCAD) and consult
+[`docs/RESEARCH.md`](docs/RESEARCH.md) before considering any live use. Do not
+trade on backtest results alone.
 
 ---
 
