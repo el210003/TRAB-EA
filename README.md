@@ -1,6 +1,6 @@
 # TRAB EA — Trend Reversal & Accumulation Breakout
 
-**M1 Expert Advisor for MetaTrader 5** · Version 1.11
+**M1 Expert Advisor for MetaTrader 5** · Version 1.12
 
 TRAB is a three-phase reversal strategy for M1 charts, built as a **pure EMA-configuration state machine with EMA20 as the protagonist**: it locks onto trending EMA stacks, waits for the momentum crack, then trades the confirmed reversal sweep — with fully rule-based entries, exits, and risk management.
 
@@ -48,7 +48,7 @@ PRIMED ──(price retests EMA150 and prints a pin bar)──▶ MARKET ORDER
 ## Installation
 
 1. Copy `TRAB_EA.mq5` to `<Data Folder>\MQL5\Experts\` (or open the folder directly: MetaTrader 5 → *File → Open Data Folder*).
-2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.11, compiled 0 errors / 0 warnings).
+2. Compile in MetaEditor (**F7**) — or use the prebuilt `TRAB_EA.ex5` (v1.12, compiled 0 errors / 0 warnings).
 3. Attach to an **M1 chart** and enable **Algo Trading**.
 4. Confirm the journal shows: `TRAB: initialized on <SYMBOL> PERIOD_M1 | pip=... | ...`
 
@@ -101,7 +101,7 @@ Entries are gated to the London (08:00–16:59) and New York (13:00–20:59) win
 ```
 TRAB-EA/
 ├── TRAB_EA.mq5                     # Full source (MQL5)
-├── TRAB_EA.ex5                     # Prebuilt v1.11 (drop into MQL5\Experts)
+├── TRAB_EA.ex5                     # Prebuilt v1.12 (drop into MQL5\Experts)
 ├── docs/
 │   ├── TRAB_EA_Proposal.md         # Formal spec & decision log
 │   └── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting

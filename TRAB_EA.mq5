@@ -26,7 +26,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "TRAB"
 #property link        ""
-#property version     "1.11"
+#property version     "1.12"
 #property description "M1 Trend Reversal & Accumulation Breakout EA"
 #property description "Sequential EMA-configuration state machine: Stack -> Crack -> Sweep -> Retest entry."
 #property description "Runs on the chart symbol. M1 timeframe only."
@@ -61,6 +61,12 @@ input int    InpRetestEmaPeriod       = 150;      // Retest EMA period for the p
 input ENUM_RETEST_MODE InpRetestMode  = RT_EMA;    // Retest level source (EMA / Fib / breakout / swing)
 input double InpRetestFib             = 0.382;     // Fib retracement fraction (RT_FIB mode)
 input int    InpSwingBars             = 3;         // Swing pivot half-width, bars (RT_SWING mode)
+
+input group "=== Multi-Timeframe Filter (v1.12) ==="
+input bool   InpUseHTFConfirm         = false;    // Require higher-TF trend confirmation to enter
+input ENUM_TIMEFRAMES InpHtfTimeframe = PERIOD_M15; // Filter timeframe
+input int    InpHtfFastPeriod         = 20;      // Filter fast EMA period
+input int    InpHtfSlowPeriod         = 50;      // Filter slow EMA period
 
 input group "=== Entry ==="
 input int    InpSetupExpiryBars       = 20;      // Primed setup lifetime (bars, frozen box)
@@ -138,6 +144,8 @@ int               g_hFast2          = INVALID_HANDLE;
 int               g_hSlow1          = INVALID_HANDLE;
 int               g_hSlow2          = INVALID_HANDLE;
 int               g_hRetest         = INVALID_HANDLE;   // retest-level EMA period (InpRetestEmaPeriod)
+int               g_hTfFast         = INVALID_HANDLE;   // MTF trend filter fast EMA
+int               g_hTfSlow         = INVALID_HANDLE;   // MTF trend filter slow EMA
 double            g_impHigh         = 0.0;    // crack->sweep impulse high (freeze at sweep; RT_FIB)
 double            g_impLow          = 0.0;    // crack->sweep impulse low (freeze at sweep; RT_FIB)
 double            g_breakHigh       = 0.0;    // sweep-completion bar high (RT_BREAK)
@@ -447,12 +455,14 @@ int OnInit()
    g_hSlow1 = iMA(_Symbol, PERIOD_CURRENT, InpSlowEma1Period, 0, MODE_EMA, PRICE_CLOSE);
    g_hSlow2 = iMA(_Symbol, PERIOD_CURRENT, InpSlowEma2Period, 0, MODE_EMA, PRICE_CLOSE);
    g_hRetest = iMA(_Symbol, PERIOD_CURRENT, InpRetestEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   g_hTfFast = iMA(_Symbol, InpHtfTimeframe, InpHtfFastPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   g_hTfSlow = iMA(_Symbol, InpHtfTimeframe, InpHtfSlowPeriod, 0, MODE_EMA, PRICE_CLOSE);
    g_hEmaExitFast = iMA(_Symbol, PERIOD_CURRENT, InpEmaExitFastPeriod, 0, MODE_EMA, PRICE_CLOSE);
    g_hEmaExitSlow = iMA(_Symbol, PERIOD_CURRENT, InpEmaExitSlowPeriod, 0, MODE_EMA, PRICE_CLOSE);
    if(g_hFast1 == INVALID_HANDLE || g_hFast2 == INVALID_HANDLE ||
       g_hSlow1 == INVALID_HANDLE || g_hSlow2 == INVALID_HANDLE ||
       g_hEmaExitFast == INVALID_HANDLE || g_hEmaExitSlow == INVALID_HANDLE ||
-      g_hRetest == INVALID_HANDLE)
+      g_hRetest == INVALID_HANDLE || g_hTfFast == INVALID_HANDLE || g_hTfSlow == INVALID_HANDLE)
      {
       Log("INIT FAILED: could not create EMA indicator handles");
       return(INIT_FAILED);
@@ -508,6 +518,8 @@ void OnDeinit(const int reason)
    if(g_hEmaExitFast != INVALID_HANDLE) IndicatorRelease(g_hEmaExitFast);
    if(g_hEmaExitSlow != INVALID_HANDLE) IndicatorRelease(g_hEmaExitSlow);
    if(g_hRetest != INVALID_HANDLE) IndicatorRelease(g_hRetest);
+   if(g_hTfFast != INVALID_HANDLE) IndicatorRelease(g_hTfFast);
+   if(g_hTfSlow != INVALID_HANDLE) IndicatorRelease(g_hTfSlow);
    if(g_exTotal > 0)
       Log("final exit stats - " + ExitStatsString());
    RestoreBgColor();
@@ -961,6 +973,26 @@ void TryEnter(const int dir)
       return;
      }
 
+   // --- gate 2b: higher-timeframe trend confirmation (v1.12) ------------------
+   if(InpUseHTFConfirm)
+     {
+      double tfF[], tfS[];
+      ArraySetAsSeries(tfF, true);
+      ArraySetAsSeries(tfS, true);
+      if(CopyBuffer(g_hTfFast, 0, 1, 1, tfF) < 1 || CopyBuffer(g_hTfSlow, 0, 1, 1, tfS) < 1)
+        {
+         Log("ENTRY ABORTED: higher-TF filter data not ready");
+         return;
+        }
+      const bool confirm = (dir > 0) ? (tfF[0] > tfS[0]) : (tfF[0] < tfS[0]);
+      if(!confirm)
+        {
+         Log(StringFormat("ENTRY ABORTED: higher-TF filter (%s) not confirming %s",
+                          EnumToString(InpHtfTimeframe), dir > 0 ? "long" : "short"));
+         return;
+        }
+     }
+
    // --- gate 3: entry-candle spike filter (the pin bar) -----------------------
    const double bodyPips = MathAbs(g_rates[0].close - g_rates[0].open) / g_pip;
    if(bodyPips > InpMaxBreakoutCandlePips)
@@ -1393,7 +1425,7 @@ void UpdatePanel()
    else if(g_e20 < g_e50 && g_e50 < g_e150 && g_e150 < g_e200)
       stackTxt = "DOWN (E20<E50<E150<E200)";
 
-   string s = "TRAB EA v1.11 | " + _Symbol + " " + EnumToString(_Period) + "\n";
+   string s = "TRAB EA v1.12 | " + _Symbol + " " + EnumToString(_Period) + "\n";
    if(InpAlertOnly)
       s += ">>> ALERT-ONLY MODE: signals are alerted, NO trades are opened <<<\n";
    if(!g_canTrade)
