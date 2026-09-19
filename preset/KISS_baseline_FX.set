@@ -1,0 +1,35 @@
+; =====================================================================
+; KISS EA v1.01 - BASELINE BACKTEST SET (5-digit FX: EURUSD / GBPUSD / etc.)
+; Tester settings: Symbol = chart symbol under test | Period = M1 or M15
+;                  Model = "Every tick based on real ticks"
+; Pip size auto-detected (10 x point). Risk = 1% equity per trade.
+; Strategy: M15 liquidity sweep of fractal swing pools + pin/engulfing
+;           confirmation. H1 EMA50 bias on. See docs/KISS_EA_UserGuide.md.
+; =====================================================================
+InpEntryTF=15
+InpSwingStrength=3
+InpSweepLookback=60
+InpUsePinBar=true
+InpUseEngulfing=true
+InpPinWickRatio=2.0
+InpMinRangeATR=0.5
+InpUseBiasFilter=true
+InpBiasTF=16385
+InpBiasEmaPeriod=50
+InpUseSessionFilter=false
+InpSessStartHour=7
+InpSessEndHour=20
+InpATRPeriod=14
+InpSLBufferATRMult=0.25
+InpMinStopATRMult=1.0
+InpRewardRR=2.0
+InpRiskPercent=1.0
+InpFixedLots=0.10
+InpUseTrailing=false
+InpTrailActivateRR=1.0
+InpTrailATRMult=1.5
+InpMaxSpreadPips=1.5
+InpMaxBarsInTrade=0
+InpMagic=20254101
+InpComment=KISS
+InpShowPanel=true
