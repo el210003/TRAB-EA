@@ -85,6 +85,7 @@ Prebuilt presets are in [`preset/`](preset/):
 
 📖 **Full parameter-by-parameter usage reference:** [`docs/TRAB_EA_UserGuide.md`](docs/TRAB_EA_UserGuide.md)
 📐 **Formal strategy spec & decision log:** [`docs/TRAB_EA_Proposal.md`](docs/TRAB_EA_Proposal.md)
+🔍 **Backtesting research findings (honest):** [`docs/RESEARCH.md`](docs/RESEARCH.md)
 
 ### Alert-Only Mode (v1.04)
 
@@ -113,7 +114,8 @@ TRAB-EA/
 ├── TRAB_EA.ex5                     # Prebuilt v1.12 (drop into MQL5\Experts)
 ├── docs/
 │   ├── TRAB_EA_Proposal.md         # Formal spec & decision log
-│   └── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting
+│   ├── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting
+│   └── RESEARCH.md                 # Backtesting research summary (honest findings)
 └── preset/
     ├── TRAB_baseline_FX.set
     ├── TRAB_baseline_XAUUSD.set

@@ -1,0 +1,32 @@
+; =====================================================================
+; TRAB-Breakout v1.00 - H1 Donchian breakout (research best config)
+; EA: TRAB_Breakout.mx5   |  attach to an H1 chart (EURUSD / USDCAD / USDJPY)
+;
+; This is the only TRAB prototype that was profitable in backtest
+; (2023-25: EURUSD PF 1.19, USDCAD 1.55, USDJPY 1.12), but it is
+; REGIME-DEPENDENT: it failed a 2018-2026 window (PF ~0.85-0.96).
+; See docs/RESEARCH.md. FORWARD-TEST ON A DEMO FIRST - do not go live
+; on backtest results alone.
+; =====================================================================
+InpEntryTF=16385
+InpChannelTF=16385
+InpChannelLen=10
+InpUseCloseBreak=true
+InpUsePullbackReentry=false
+InpUseTrendFilter=false
+InpATRPeriod=14
+InpATRMultSL=2.5
+InpTrailChannelLen=10
+InpTrailATRMult=2.0
+InpTrailActivateRR=1.0
+InpUseTrailing=true
+InpBreakevenRR=0.0
+InpTakeProfitRR=0.0
+InpMaxSLPips=0.0
+InpMaxSpreadPips=2.0
+InpMaxBarsInTrade=96
+InpRiskPercent=1.0
+InpFixedLots=0.10
+InpMagic=20252001
+InpComment=TRAB-B
+InpShowPanel=true
