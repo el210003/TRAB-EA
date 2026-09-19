@@ -138,9 +138,9 @@ Forward-test the breakout on a **demo** (recommend USDCAD) and consult
 trade on backtest results alone.
 
 `KISS_EA` is a newer M15 SMC/ICT prototype (**liquidity sweep of fractal swing
-pools + pin bar / engulfing confirmation**). Mechanics are smoke-tested and the
-baseline config lost Q1-2024 EURUSD (23 % win at 1:2 — below break-even, the
-tight-stop cost wall again); see
+pools + pin bar / engulfing confirmation**). Remote real-tick backtests
+2023–25: EURUSD baseline **loses every year (PF 0.84)**; XAUUSD is
+**breakeven (PF 1.03)** — no durable edge at baseline; see
 [`docs/KISS_EA_UserGuide.md`](docs/KISS_EA_UserGuide.md).
 
 ---

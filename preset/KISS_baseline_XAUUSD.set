@@ -1,5 +1,5 @@
 ; =====================================================================
-; KISS EA v1.01 - BASELINE BACKTEST SET (XAUUSD / gold)
+; KISS EA v1.02 - BASELINE BACKTEST SET (XAUUSD / gold)
 ; Tester settings: Symbol = XAUUSD | Period = M1 or M15
 ;                  Model = "Every tick based on real ticks"
 ; NOTE pip size: gold quotes are 2-digit -> 1 "pip" = 1 point = 0.01,
@@ -22,6 +22,7 @@ InpSessEndHour=20
 InpATRPeriod=14
 InpSLBufferATRMult=0.25
 InpMinStopATRMult=1.0
+InpMaxSpreadToSLPct=15.0
 InpRewardRR=2.0
 InpRiskPercent=1.0
 InpFixedLots=0.10

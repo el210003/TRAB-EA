@@ -1,6 +1,6 @@
 # KISS EA — SMC/ICT Liquidity Sweep + Pin/Engulfing Entry
 
-**M15 Expert Advisor for MetaTrader 5** · Version 1.01
+**M15 Expert Advisor for MetaTrader 5** · Version 1.02
 
 KISS ("Keep It Simple, Stupid") is a minimal **Smart Money Concepts (SMC) /
 Inner Circle Trader (ICT)-style** strategy: it hunts **liquidity sweeps** of the
@@ -12,13 +12,21 @@ stays four rules deep.
 > **Status:** experimental / research EA. Trade on demo first. No performance
 > guarantee — see the [Disclaimer](#-disclaimer).
 >
-> **Smoke test (v1.01, 2024-01→03 EURUSD, real ticks):** the EA mechanics
-> validated (entries, SL/TP fills, rejection forensics, R accounting). The
-> *baseline* config lost (81 trades, 23 % win at 1:2 RR — below the ~33 %
-> break-even; spread+commission ≈ 0.1–0.3R per trade on M15-sized stops). This
-> matches the cost-wall finding in [`RESEARCH.md`](RESEARCH.md) for tight-stop
-> M15 entries: wider effective stops (via `MinStopATRMult` / `MinRangeATR` /
-> higher-TF sweeps) and the optimizer are the next research step.
+> **Backtest campaign (v1.02 baseline, remote MT5 real ticks, 2023-01 →
+> 2025-12, 1 % risk, bias on, no session/trailing):**
+>
+> | Symbol | Trades | Win % | PF(R) | sumR | Final balance |
+> |---|---|---|---|---|---|
+> | EURUSD | 934 | 29.9 % | **0.84** | −110 R | $3,047 (−70 %) |
+> | XAUUSD | 1,115 | 34.3 % | **1.03** | +22 R | $11,091 (+11 %) |
+>
+> EURUSD loses consistently in **every** year (31.9 % / 27.5 % / 29.9 % win);
+> XAUUSD is statistically breakeven (34.3 % ≈ the 33.3 % break-even at 1:2 +
+> costs). **No durable edge at the baseline settings** — consistent with the
+> cost-wall finding in [`RESEARCH.md`](RESEARCH.md). The SL floors worked as
+> designed (median loss −1.00 R, p95 win +2.02 R; only gap outliers beyond
+> ±3 R on gold). Next research levers: session filter (killzones), trailing,
+> swing-strength/sweep lookback grids, bias TF/period.
 
 ---
 
@@ -75,13 +83,21 @@ that is also a valid pin/engulfing), **or** the next closed bar confirms while
 and *closing back inside the pool*. The next-bar engulfing naturally uses the
 sweep bar as the engulfed candle — the classic "sweep then engulf" sequence.
 
-**Stop / target** — SL beyond the *extreme* of the sweep sequence (sweep and
-confirm bar, whichever is further out) plus `SLBufferATRMult` × ATR; TP at
-`RewardRR` × risk. **Minimum stop floor:** if the sweep geometry yields a stop
-closer than `MinStopATRMult` × ATR (a sweep wick hugging the entry), the SL is
-widened to the floor — this guards the position size from exploding on
-degenerate setups and keeps spread/slippage a sane fraction of the risk. Sizing
-is `RiskPercent` of equity (0 = `FixedLots`).
+**Stop / target** — the SL is the **widest** of three candidates, so the sweep
+structure is respected but cost floors always dominate when they are wider:
+
+1. *Sweep-extreme stop*: beyond the extreme of the sweep sequence (sweep and
+   confirm bar, whichever is further out) plus `SLBufferATRMult` × ATR;
+2. *ATR floor*: `MinStopATRMult` × ATR — guards the position size from exploding
+   on degenerate sweep wicks hugging the entry;
+3. *Spread floor*: the spread must stay ≤ `MaxSpreadToSLPct` % of the SL
+   distance (default 15 %) — i.e. `spread / SL distance × 100 % ≤ 15 %`. This is
+   **not an entry gate**: the stop is simply **widened** so the spread cost
+   stays a bounded fraction of the risk (0 disables the floor).
+
+When a floor applies, the SL may sit inside the sweep wick — the structural
+stop is used only when it is the widest candidate. TP is `RewardRR` × risk.
+Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 
 ## Optional Filters
 
@@ -111,6 +127,7 @@ is `RiskPercent` of equity (0 = `FixedLots`).
 | `InpATRPeriod` | `14` | ATR period on the entry TF (SL buffer, trailing). |
 | `InpSLBufferATRMult` | `0.25` | SL buffer beyond the sweep extreme (× ATR). |
 | `InpMinStopATRMult` | `1.0` | SL distance floor (× ATR); widens stops that the sweep wick made too tight. |
+| `InpMaxSpreadToSLPct` | `15.0` | Max spread as % of SL distance; widens the SL when needed (0 = off). Not an entry gate. |
 | `InpRewardRR` | `2.0` | TP distance = reward:risk multiple. |
 | `InpRiskPercent` | `1.0` | Risk % of equity per trade (0 = fixed lots). |
 | `InpFixedLots` | `0.10` | Fixed lots when `RiskPercent = 0`. |
@@ -138,6 +155,7 @@ The SL/TP math is ATR-based, so it scales across symbols automatically; only
 For headless backtest parsing the EA logs:
 
 - entries: `>>> BUY 0.12 | SL … | TP … | risk 12.3 pips | sell-side sweep of swing 1.08321 @ 2024.03.05 10:15 | bull pin`
+- SL widened by a floor: `SL widened to floor: 2.2 -> 6.7 pips (spread 1.0 pips = 15% of SL)`
 - per-trade: `position #N CLOSED - net +1.87R / 43.10 USD`
 - rejections: `ENTRY ABORTED: spread …` / `ENTRY ABORTED: outside session …` /
   `ENTRY ABORTED: long against PERIOD_H1 EMA50 bias (…)` /
