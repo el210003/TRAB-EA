@@ -126,6 +126,50 @@ cmd //c start "" '<path>\terminal64.exe' "/config:<abs path>\Tester\trab_backtes
 > model faithfully. The tester's `Alert()` does **not** fire in the tester, so
 > validate alert-only behavior on a live/demo chart.
 
+### Remote MT5 headless backtesting (via SSH — offloads compute off the local box)
+
+A second MT5 machine is available at **`192.168.5.108`** (passwordless SSH as
+`administrator`, key `~/.ssh/id_ed25519`). This is the preferred place to run
+heavy backtests so they don't fill the local C: (which tends to run tight).
+
+**Find the MT5 install + data folder (Windows over SSH):**
+- Install: `C:\Program Files\MetaTrader 5 ICM-01\terminal64.exe` (+ `metatester64.exe`).
+- Data folder = the `MetaQuotes\Terminal\<HASH>` folder whose `origin.txt` names
+  that exe. Run a PowerShell script (write it locally, `scp` it, run `powershell -File`)
+  to read each `origin.txt` — inline nested quoting over SSH is brittle, so always
+  ship a `.ps1`/`.bat` file and invoke it with `-File` / `cmd /c`.
+
+**Copy the EAs out:** `scp TRAB_EA.mq5/.ex5 TRAB_Swing.mq5/.ex5 admin@…:…\MQL5\Experts\`.
+
+**Data:** MT5 **auto-downloads** the needed history when the tester runs (no
+pre-download needed) — the bases start empty and the tester pulls M1/ticks from
+the broker.
+
+**Run a test (this is the reliable launch method):** a plain `Start-Process` or
+`cmd start` dies in the non-interactive SSH session. Instead use a **Windows
+scheduled task**:
+
+```bat
+schtasks /create /tn TRABTest /tr "\"C:\Program Files\MetaTrader 5 ICM-01\terminal64.exe\" /config:\"…\Tester\remote_test.ini\"" /sc once /st 00:00 /f
+schtasks /run /tn TRABTest
+```
+
+The config `.ini` (written to `<data folder>\Tester\`) is the same `[Tester]`+
+`[TesterInputs]` format as local (see above), e.g. `Expert=TRAB_Swing.ex5`,
+`Period=M15`, `Model=4`, `ShutdownTerminal=1`.
+
+**Monitor + read results** (`scp` the journal and decode locally — PowerShell `Select-String`
+double-encodes UTF-16, so always pull the raw `.log` and `iconv` once):
+- Check done: `ssh … "(Get-Process terminal64,metatester64 …).Count"` → `0` = finished.
+- `scp …:…\Tester\logs\<date>.log` → `iconv -f UTF-16LE -t UTF-8` → grep the EA's
+  `position #… CLOSED` / `>>> ` lines (add closed-position logging to the EA if it
+  doesn't have it — the remote runner relies on it).
+
+**Clean up afterwards** (run on the remote): stop any `terminal64`/`metatester64`
+processes, `schtasks /delete /tn TRABTest /f`, and `Remove-Item` the remote
+`Tester\cache\*.tst`, `Tester\logs\*.log`, per-test `.ini`, and any pushed helper
+`.bat`/`.ps1`. **Keep** `MQL5\Experts\TRAB*` and the downloaded `bases\` history.
+
 ## Code Conventions
 
 Follow the existing style exactly — this file is one large, deliberately flat module:
