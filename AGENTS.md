@@ -1,56 +1,56 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in this repository.
+Guidance for AI coding agents working on **MetaTrader 5 (MQL5) Expert Advisors** in
+this repository. It is intentionally generic — apply it to any `.mq5` EA in the
+repo, whether the original strategy or a research prototype.
 
 ## Project Overview
 
-**TRAB EA** — a MetaTrader 5 Expert Advisor (MQL5) implementing a three-phase reversal
-strategy on M1 charts: Trend (EMA stack in place) → Crack (EMA20/50 flip) → Sweep (EMA20 beyond all EMAs) → Retest entry (EMA150 retest + pin bar).
-Single-file EA (`TRAB_EA.mq5`), no external dependencies beyond the standard library
-(`<Trade\Trade.mqh>`).
-
-- `TRAB_EA.ex5` — prebuilt binary, **intentionally committed** so MT5 users can use it
-  without compiling. Never edit by hand; regenerate via the build command below.
-- `docs/TRAB_EA_Proposal.md` — formal strategy spec & decision log (read before changing
-  trading logic; it records *why* defaults are what they are).
-- `docs/TRAB_EA_UserGuide.md` — end-user manual with a per-input usage reference.
-- `preset/*.set` — MT5 input presets (baseline FX, baseline XAUUSD, walk-forward optimizer).
+- This repo contains one or more **MQL5 Expert Advisors** (`*.mq5`), each with a
+  matching prebuilt `*.ex5` that is **intentionally committed** so MT5 users can
+  use it without compiling. **Never hand-edit an `.ex5`** — regenerate it with the
+  build command below.
+- Standard library only (`<Trade\Trade.mqh>`); no external dependencies.
+- `docs/` holds per-EA specs, user guides, and a research/decisions log. Read the
+  relevant spec **before** changing trading logic — it records *why* defaults are
+  what they are.
+- `preset/*.set` holds MT5 input presets (baseline + optimizer grids).
 
 ## Build
 
 Compile with the MetaEditor CLI (no interactive IDE needed):
 
 ```bash
-"C:/Program Files/MetaTrader 5 IC Markets Global/MetaEditor64.exe" \
-  /compile:"<absolute path>/TRAB_EA.mq5" \
+"C:/Program Files/MetaTrader 5 <Broker>/MetaEditor64.exe" \
+  /compile:"<absolute path>/MyEA.mq5" \
   /log:"<absolute path>/compile.log"
 ```
 
 - The log is **UTF-16LE**: read it with `iconv -f UTF-16LE -t UTF-8 compile.log`.
 - The build gate is **`Result: 0 errors, 0 warnings`**. Treat warnings as failures.
 - Delete the temp `compile.log` afterwards (it is git-ignored anyway).
-- If MetaEditor is running interactively, the CLI compile still works.
+- A running MetaEditor does not block the CLI compile.
 
 ## Backtesting (headless Strategy Tester)
 
-The MT5 Strategy Tester can be driven non-interactively from the CLI via a
-`[Tester]` INI config file — no GUI needed.
+The MT5 Strategy Tester can be driven non-interactively via a `[Tester]` INI
+config file — no GUI needed.
 
 > **Critical gotcha:** the headless `/config` launch **cannot run while the MT5
-> terminal is open**. Close `terminal64.exe` first (it's usually attached to a
-> live/demo chart, so do this deliberately, never `taskkill` it out from under a
-> live session without asking). `ShutdownTerminal=1` makes the terminal close
-> itself when the test finishes.
+> terminal is open**. Close `terminal64.exe` first (it may be attached to a
+> live/demo chart, so do this deliberately — never kill it out from under a live
+> session without asking). `ShutdownTerminal=1` closes the terminal when the
+> test finishes.
 
-**Tester config template** (`<Data Folder>\Tester\trab_backtest.ini`):
+**Tester config template** (`<Data Folder>\Tester\<test>.ini`):
 
 ```ini
 [Tester]
-Expert=EMA-Trading\TRAB_EA.ex5   ; path relative to <Data Folder>\MQL5\Experts
+Expert=MyEA.ex5                ; path relative to <Data Folder>\MQL5\Experts
 Symbol=EURUSD
 Period=M1
 Optimization=0
-Model=4                          ; 4 = "Every tick based on real ticks" (REQUIRED for per-tick trailing)
+Model=4                        ; 4 = "Every tick based on real ticks" (required for per-tick logic)
 FromDate=2023.01.01
 ToDate=2025.12.31
 ForwardMode=0
@@ -62,163 +62,157 @@ Visual=0
 ShutdownTerminal=1
 
 [TesterInputs]
-; Inline EA inputs — the ONLY reliable way to override parameters headlessly.
+; Inline EA inputs — the reliable way to override parameters headlessly.
 ; Format: Name=value||start||step||stop||(N=fixed|Y=optimize)
-InpUseEmaCrossExit=false||0||0||0||N
-InpTrailActivateRR=999.0||0||0||0||N
+SomeInput=false||0||0||0||N
+AnotherInput=10||0||0||0||N
 ```
 
-> **Gotcha (learned the hard way):** `ExpertParameters=<path>.set` is **NOT**
-> honored when the `.set` lives in the repo `preset/` folder — it silently falls
-> back to the EA's compiled defaults. MT5 only resolves a `.set` from
-> `<Data Folder>\MQL5\Presets\`. For headless runs, pass inputs **inline via the
-> `[TesterInputs]` section** instead (each `Name=value||0||0||0||N`). The
-> `TRAB_optimize_walkforward.set` `||`-format maps directly to this.
-> To build a variant: `sed` a base preset into a new `.set`, then feed it through
-> the same `[TesterInputs]` transform.
+> **Gotcha:** `ExpertParameters=<path>.set` is **not** honored when the `.set`
+> lives elsewhere than `<Data Folder>\MQL5\Presets\` — it silently falls back to
+> the EA's compiled defaults. For headless runs pass inputs **inline via
+> `[TesterInputs]`** (each `Name=value||0||0||0||N`). A `||`-style optimizer
+> `.set` maps directly to this.
 
 **Launch** (detached so it doesn't block):
 
 ```bash
-cmd //c start "" '<path>\terminal64.exe' "/config:<abs path>\Tester\trab_backtest.ini"
+cmd //c start "" '<path>\terminal64.exe' "/config:<abs path>\Tester\<test>.ini"
 ```
 
-**Monitor & collect results** (all logs are UTF-16LE — convert with `iconv`):
+**Monitor & collect results** (all MT5 journals are UTF-16LE — convert with `iconv`):
 
-- Progress: `iconv -f UTF-16LE -t UTF-8 <Data Folder>\Tester\logs\YYYYMMDD.log`
-  and read the last simulated `TRAB:` timestamp. `metatester64.exe` running in
-  `tasklist` = still processing; both gone = finished.
-- The EA journal is mirrored to `<Data Folder>\Tester\logs\YYYYMMDD.log` **and**
-  `<MetaQuotes Data>\Tester\<terminalId>\Agent-*\logs\YYYYMMDD.log`. Read the
-  former. Note the log is **per calendar day** (it rolls at midnight) and the
-  tester can also spin up faster on subsequent runs once tick data is cached
-  (a cached 3-yr M1 run takes ~5s, not ~5min).
-- MT5's own `Report=` XML/HTML **was not** emitted at the configured path in this
-  setup — don't rely on it. Parse the **tester journal** instead: the EA logs
-  its own per-trade and summary lines there.
-- Journal lines to grep (same journal as above):
+- Progress: `iconv -f UTF-16LE -t UTF-8 <Data Folder>\Tester\logs\YYYYMMDD.log`,
+  read the last simulated log line. `metatester64.exe` in `tasklist` = still
+  running; both `terminal64` and `metatester64` gone = finished.
+- The EA journal is mirrored under `<Data Folder>\Tester\logs\` **and**
+  `<MetaQuotes Data>\Tester\<terminalId>\Agent-*\logs\`. Read the former. The log
+  is **per calendar day** (rolls at midnight); subsequent runs are fast once tick
+  data is cached.
+- MT5's own `Report=` XML is often **not** emitted at the configured path — don't
+  rely on it. Parse the **tester journal** instead: have the EA log per-trade and
+  summary lines, then grep them. Common patterns:
   - Entries: `>>> (BUY|SELL)`
-  - Per-trade result: `position #[0-9]+ CLOSED - exit: <TP|Trail|Cross|SL|Other> | net <R>R / <USD>`
-  - Session summary: `exit stats:` and the final `final exit stats - <n> trades,
-    <R>R total | TP ... | Trail ... | Cross ... | SL ...`
-- The `.tst` file in `<Data Folder>\Tester\cache\` is the raw test result
-  (`TRAB_EA.EURUSD.M1.<from>_<to>.4.<hash>.tst`) — a good success indicator.
-- **IMPORTANT — clean up after you finish testing/analysis.** The Strategy
-  Tester writes large transient artifacts to `<Data Folder>\Tester\cache\`
-  (`.tst`, can be ~2 GB), `<Data Folder>\Tester\logs\` (daily journals) and the
-  agent mirrors under `<MetaQuotes Data>\Tester\...\Agent-*\logs\`. When the
-  backtest + analysis is **complete**, wipe them to free disk (C: tends to run
-  tight here). Helper script on E:\tmp:\
-  `bash /e/tmp/clean.sh` — removes cache `.tst`, tester journals, agent mirrors,
-  and the per-test `.ini` configs.
-  It **keeps** the history bases (`bases/`) and the EA repo
-  (`MQL5\Experts\EMA-Trading`), and refuses to run while `terminal64`/
-  `metatester` are running. Only run it once you've extracted the numbers
-  you need (results are logged to the journal, which the cleanup deletes).
-- **Isolating one run from another in the shared daily log:** snapshot the
-  `grep -c "position #[0-9]+ CLOSED"` count just before the launch, then after the
-  run take only lines `N0+1..N1` (chronological). Each single-parameter run adds
-  exactly the same signal count, so compare `Trades`, win %, `sumR`, and the
-  per-exit breakdown (`TP/Trail/Cross/SL`).
+  - Per-trade: `position #[0-9]+ CLOSED - exit: <TP|Trail|Cross|SL|...> | net <R>R / <USD>`
+  - Summary: `final exit stats - <n> trades, <R>R total | ...`
+- The `.tst` file in `<Data Folder>\Tester\cache\` is the raw result — a good
+  success indicator that a test ran.
 
-> **Model matters:** `Model=4` (real ticks) is required for this EA — the
-> trailing stop and the EMA cross-exit run per-tick, which other models don't
-> model faithfully. The tester's `Alert()` does **not** fire in the tester, so
-> validate alert-only behavior on a live/demo chart.
+**Isolating one run from another in the shared daily log:** snapshot the
+`grep -c` of the per-trade pattern just before launch, then after the run take
+only lines `N0+1..N1` (chronological). Each parameter run appends its trade list
+to the same log, so compare counts, win %, `sumR`, and exit breakdown between
+runs. For a **multi-symbol pool**, clear the daily log between runs so position
+IDs don't collide across runs (or add a per-run marker line).
 
-### Remote MT5 headless backtesting (via SSH — offloads compute off the local box)
+> **Model matters:** `Model=4` (real ticks) is required for any EA with per-tick
+> trailing/stop logic. The tester does **not** execute `Alert()` — validate
+> alert-only behavior on a live/demo chart.
+
+## Remote MT5 headless backtesting (via SSH — offload compute off the local box)
 
 A second MT5 machine is available at **`192.168.5.108`** (passwordless SSH as
-`administrator`, key `~/.ssh/id_ed25519`). This is the preferred place to run
-heavy backtests so they don't fill the local C: (which tends to run tight).
+`administrator`, key `~/.ssh/id_ed25519`). Use it for heavy backtests so they
+don't fill the local C:.
 
 **Find the MT5 install + data folder (Windows over SSH):**
 - Install: `C:\Program Files\MetaTrader 5 ICM-01\terminal64.exe` (+ `metatester64.exe`).
 - Data folder = the `MetaQuotes\Terminal\<HASH>` folder whose `origin.txt` names
-  that exe. Run a PowerShell script (write it locally, `scp` it, run `powershell -File`)
-  to read each `origin.txt` — inline nested quoting over SSH is brittle, so always
-  ship a `.ps1`/`.bat` file and invoke it with `-File` / `cmd /c`.
+  that exe. Write a small `.ps1` locally, `scp` it, run `powershell -File` to read
+  each `origin.txt`. **Inline nested quoting over SSH is brittle — always ship a
+  `.ps1`/`.bat` file and invoke it with `-File` / `cmd /c`.**
 
-**Copy the EAs out:** `scp TRAB_EA.mq5/.ex5 TRAB_Swing.mq5/.ex5 admin@…:…\MQL5\Experts\`.
+**Copy the EAs out:** `scp MyEA.mq5 MyEA.ex5 admin@…:…\MQL5\Experts\`.
 
-**Data:** MT5 **auto-downloads** the needed history when the tester runs (no
-pre-download needed) — the bases start empty and the tester pulls M1/ticks from
-the broker.
+**Data:** MT5 **auto-downloads** the needed history when the tester runs (bases
+start empty; the tester pulls M1/ticks from the broker).
 
 **Run a test (this is the reliable launch method):** a plain `Start-Process` or
-`cmd start` dies in the non-interactive SSH session. Instead use a **Windows
-scheduled task**:
+`cmd start` **dies in a non-interactive SSH session**. Use a **Windows scheduled
+task** instead:
 
 ```bat
-schtasks /create /tn TRABTest /tr "\"C:\Program Files\MetaTrader 5 ICM-01\terminal64.exe\" /config:\"…\Tester\remote_test.ini\"" /sc once /st 00:00 /f
-schtasks /run /tn TRABTest
+schtasks /create /tn MT5Test /tr "\"C:\Program Files\MetaTrader 5 ICM-01\terminal64.exe\" /config:\"…\Tester\remote_test.ini\"" /sc once /st 00:00 /f
+schtasks /run /tn MT5Test
 ```
 
-The config `.ini` (written to `<data folder>\Tester\`) is the same `[Tester]`+
-`[TesterInputs]` format as local (see above), e.g. `Expert=TRAB_Swing.ex5`,
-`Period=M15`, `Model=4`, `ShutdownTerminal=1`.
+The config `.ini` (written to `<data folder>\Tester\`) is the same `[Tester]` +
+`[TesterInputs]` format as local. Use **backslash** Windows paths in the config
+`Report=` and in the `/config:` argument (forward slashes in those two spots make
+MT5 silently fail to start the test).
 
-**Monitor + read results** (`scp` the journal and decode locally — PowerShell `Select-String`
-double-encodes UTF-16, so always pull the raw `.log` and `iconv` once):
+**Monitor + read results** (`scp` the journal and decode locally — PowerShell
+`Select-String` double-encodes UTF-16, so always pull the raw `.log` and `iconv`
+once):
 - Check done: `ssh … "(Get-Process terminal64,metatester64 …).Count"` → `0` = finished.
 - `scp …:…\Tester\logs\<date>.log` → `iconv -f UTF-16LE -t UTF-8` → grep the EA's
-  `position #… CLOSED` / `>>> ` lines (add closed-position logging to the EA if it
-  doesn't have it — the remote runner relies on it).
+  per-trade / `>>> ` lines (add closed-position logging to the EA if it lacks it).
 
-**Clean up afterwards** (run on the remote): stop any `terminal64`/`metatester64`
-processes, `schtasks /delete /tn TRABTest /f`, and `Remove-Item` the remote
-`Tester\cache\*.tst`, `Tester\logs\*.log`, per-test `.ini`, and any pushed helper
-`.bat`/`.ps1`. **Keep** `MQL5\Experts\TRAB*` and the downloaded `bases\` history.
+**Clean up afterwards** (on the remote): stop any `terminal64`/`metatester64`,
+`schtasks /delete /tn MT5Test /f`, and `Remove-Item` the remote `Tester\cache\*.tst`,
+`Tester\logs\*.log`, per-test `.ini`, and any pushed helper `.bat`/`.ps1`.
+**Keep** `MQL5\Experts\MyEA*` and the downloaded `bases\` history.
 
-## Code Conventions
+## Clean up local artifacts after testing
 
-Follow the existing style exactly — this file is one large, deliberately flat module:
+The Strategy Tester writes large transient artifacts to `<Data Folder>\Tester\cache\`
+(`.tst`, can be ~2 GB), `<Data Folder>\Tester\logs\`, and agent mirrors under
+`<MetaQuotes Data>\Tester\...\Agent-*\logs\`. **When the backtest + analysis is
+complete, wipe them** (C: tends to run tight). A helper is `bash /e/tmp/clean.sh`
+(removes cache `.tst`, tester logs, agent mirrors, per-test `.ini`; **keeps** the
+`bases\` history and the repo; refuses to run while MT5 is running). Only run it
+after you've extracted the numbers you need.
 
-- Inputs: `InpPascalCase`, declared in `input group "=== Name ==="` blocks, each with a
-  trailing `// comment` (MT5 shows these comments as the input label in the UI).
-- Globals: `g_pascalCase`. Constants/enum values: `ST_*` for the state machine
-  (`ENUM_TRAB_STATE`). Helpers live in the "Small helpers" section.
-- Logging: use the `Log()` wrapper (prefixes `TRAB: `) — never raw `Print()`.
-- Every function carries a `//+---+` comment box with a one-line purpose.
-- Entry gating happens in `TryEnter()`; each rejection logs a distinct reason
-  (`ENTRY ABORTED: ...`, `TRADE SKIPPED: ...`) — preserve this forensics style.
-- Signals are evaluated **only on closed M1 bars** (`EvaluateOnBarClose`), except trailing
-  and the cross-exit retry which run per tick. Do not introduce intra-bar logic into the
-  state machine.
+## Code Conventions (MQL5)
+
+- **Inputs:** `InpPascalCase`, declared in `input group "=== Name ==="` blocks,
+  each with a trailing `// comment` (MT5 shows these as the input label).
+- **Globals:** `g_camelCase`. Constants/enums uppercase (`ST_*`, `ENUM_*`). Helpers
+  in a "Small helpers" section.
+- **Logging:** a `Log()` wrapper with a prefix — never raw `Print()` in the EA.
+- Every function gets a `//+---+` comment box with a one-line purpose.
+- **Entry gating** in a dedicated `TryEnter()`; each rejection logs a distinct
+  reason (`ENTRY ABORTED: ...` / `TRADE SKIPPED: ...`) — keep this forensics style.
+- **Closed-bar discipline:** evaluate signals only on closed bars; only trailing
+  / close-retry run per tick. Don't introduce intra-bar logic into a state machine.
 
 ## When You Change Things
 
 1. **New/changed input** → add it to the matching `input group`, to the `OnInit()`
-   validation chain (if it has constraints), **and to the table in
-   `docs/TRAB_EA_UserGuide.md` §3** with a usage description.
-2. **Behavior change** → document it in the UserGuide (and Proposal decision log if it
+   validation chain if it has constraints, **and to the EA's docs table** with a
+   usage description.
+2. **Behavior change** → document it in the relevant doc (and decision log if it
    alters strategy semantics).
-3. **Version bump** → `#property version "X.XX"` *and* the panel string in `UpdatePanel()`
-   must stay in sync.
-4. **Recompile** and confirm 0 errors / 0 warnings before committing; commit the
-   refreshed `TRAB_EA.ex5` together with the source.
-5. Commit directly to `main` (`git add -A && git commit && git push`) — repo:
-   `https://github.com/el210003/TRAB-EA`.
+3. **Version bump** → `#property version "X.XX"` *and* any on-chart panel/comment
+   string must stay in sync.
+4. **Recompile** → 0 errors / 0 warnings before committing; commit the refreshed
+   `*.ex5` together with the source.
+5. Commit directly to `main` (`git add -A && git commit && git push`).
 
 ## Platform Gotchas (learned the hard way)
 
-- The MT5 Experts journal (`<Data Folder>\MQL5\Logs\YYYYMMDD.log`) is **UTF-16LE** —
-  plain `grep` finds nothing. Convert with `iconv` first. Tester journals live in
-  `<Data Folder>\Tester\logs\` and stamp EA messages with *simulated* time.
+- MT5 journals (`<Data Folder>\MQL5\Logs\`, `<Data Folder>\Tester\logs\`,
+  `MetaQuotes\Tester\...\Agent-*\`) and the MetaEditor build log are **UTF-16LE** —
+  plain `grep` finds nothing; use `iconv`. Tester journals stamp EA messages with
+  *simulated* time.
 - `Alert()` is **not executed** in the Strategy Tester — alert-only behavior must be
   validated on a live/demo chart.
-- Pip size is symbol-dependent: 3/5-digit quotes → 10 points/pip, else 1 point;
-  `InpPipSizeOverride` exists for gold/indices. Any pips-based math must go through
-  `g_pip` / `PipToPrice()`.
-- Session hours are GMT by default (`InpUseServerTime = false` + `InpServerGMTOffset`);
-  don't "fix" timezone math without checking which base the inputs refer to.
-- The state machine is frozen while a position is open, and `HasOpenPosition()` filters
-  by symbol **and** magic — keep both filters on any new position scan.
+- **Pip size is symbol-dependent:** 3/5-digit quotes → 10 points/pip, else 1 point.
+  Override inputs exist for gold/indices. Route all pips math through `g_pip` /
+  a `PipToPrice()` helper.
+- **Session/timezone math** is configuration-dependent (GMT vs broker server time)
+  — don't "fix" it without checking which base the inputs reference.
+- Position scans must filter by **symbol AND magic number**, and a state machine is
+  typically frozen while a position is open.
+- **Headless gotchas:** `[TesterInputs]` (not `ExpertParameters`), backslash paths
+  in `Report=`/`/config:`, the scheduled-task launch over SSH, and clearing the
+  daily log between runs for multi-symbol pools.
 
 ## Validation Checklist Before Handing Back
 
 - [ ] Compiles: 0 errors, 0 warnings
-- [ ] `#property version` == panel version string
-- [ ] New inputs documented in UserGuide §3 (and validated in `OnInit`)
-- [ ] No strategy-behavior change without a UserGuide/Proposal note
+- [ ] `#property version` == panel version string (if any)
+- [ ] New inputs documented (and validated in `OnInit`)
+- [ ] No strategy-behavior change without a doc/decision-log note
 - [ ] Committed source + refreshed `.ex5` together, pushed to `main`
+- [ ] Backtest artifacts cleaned up after analysis (see Clean up section)
