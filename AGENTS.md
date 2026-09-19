@@ -111,12 +111,14 @@ IDs don't collide across runs (or add a per-run marker line).
 
 ## Remote MT5 headless backtesting (via SSH — offload compute off the local box)
 
-A second MT5 machine is available at **`192.168.5.108`** (passwordless SSH as
-`administrator`, key `~/.ssh/id_ed25519`). Use it for heavy backtests so they
-don't fill the local C:.
+A second MT5 machine is available (passwordless SSH, key `~/.ssh/id_ed25519`).
+The actual **host IP and SSH username are configured locally and are NOT
+committed** here (they're in a local SSH config). Use it for heavy backtests so
+they don't fill the local C:.
 
 **Find the MT5 install + data folder (Windows over SSH):**
-- Install: `C:\Program Files\MetaTrader 5 ICM-01\terminal64.exe` (+ `metatester64.exe`).
+- Install: `<MT5 install path>\terminal64.exe` (+ `metatester64.exe`) — find it with
+  `dir /b "C:\Program Files\MetaTrader*"` on the remote.
 - Data folder = the `MetaQuotes\Terminal\<HASH>` folder whose `origin.txt` names
   that exe. Write a small `.ps1` locally, `scp` it, run `powershell -File` to read
   each `origin.txt`. **Inline nested quoting over SSH is brittle — always ship a
@@ -132,7 +134,7 @@ start empty; the tester pulls M1/ticks from the broker).
 task** instead:
 
 ```bat
-schtasks /create /tn MT5Test /tr "\"C:\Program Files\MetaTrader 5 ICM-01\terminal64.exe\" /config:\"…\Tester\remote_test.ini\"" /sc once /st 00:00 /f
+schtasks /create /tn MT5Test /tr "\"<MT5 install path>\terminal64.exe\" /config:\"…\Tester\remote_test.ini\"" /sc once /st 00:00 /f
 schtasks /run /tn MT5Test
 ```
 
