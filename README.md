@@ -114,19 +114,15 @@ TRAB-EA/
 ├── TRAB_Breakout.mq5 / .ex5        # H1 Donchian breakout (research prototype; profitable 2023-25 but REGIME-DEPENDENT)
 ├── TRAB_Swing.mq5 / .ex5           # H4 trend + M15 entry (research prototype, did not work)
 ├── TRAB_SnR.mq5 / .ex5             # H4 S/R + M1 EMA (research prototype, did not work)
-├── KISS_EA.mq5 / .ex5              # M15 SMC/ICT liquidity sweep + pin/engulfing entry (new research prototype)
 ├── docs/
 │   ├── TRAB_EA_Proposal.md         # Formal spec & decision log
 │   ├── TRAB_EA_UserGuide.md        # Complete inputs reference + troubleshooting
-│   ├── KISS_EA_UserGuide.md        # SMC sweep + pin/engulfing spec & inputs reference
 │   └── RESEARCH.md                 # Backtesting research summary (honest findings)
 └── preset/
     ├── TRAB_baseline_FX.set
     ├── TRAB_baseline_XAUUSD.set
     ├── TRAB_optimize_walkforward.set
-    ├── TRAB_baseline_breakout.set  # H1 Donchian breakout demo preset (see RESEARCH.md)
-    ├── KISS_baseline_FX.set        # M15 SMC sweep baseline (5-digit FX)
-    └── KISS_baseline_XAUUSD.set    # M15 SMC sweep baseline (gold)
+    └── TRAB_baseline_breakout.set  # H1 Donchian breakout demo preset (see RESEARCH.md)
 ```
 
 ### Note on the research prototypes
@@ -136,13 +132,6 @@ failed a 2018–2026 window (PF ≈ 0.85–0.96). The original `TRAB_EA` had **n
 Forward-test the breakout on a **demo** (recommend USDCAD) and consult
 [`docs/RESEARCH.md`](docs/RESEARCH.md) before considering any live use. Do not
 trade on backtest results alone.
-
-`KISS_EA` is a newer M15 SMC/ICT prototype (**liquidity sweep of fractal swing
-pools + pin bar / engulfing confirmation**, **H4 market-structure bias**).
-Remote real-tick backtests 2023–25: EURUSD baseline still **loses (PF 0.88)**;
-XAUUSD improved to **PF 1.11 (+91 R)** with the structure bias — thin,
-instrument-specific, not yet out-of-sample validated; see
-[`docs/KISS_EA_UserGuide.md`](docs/KISS_EA_UserGuide.md).
 
 ---
 
