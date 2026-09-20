@@ -29,7 +29,9 @@ stays four rules deep.
 > instrument-specific and thin (XAUUSD avg +0.07 R/trade). Not validated
 > out-of-sample; do not treat as a durable edge. The SL floors worked as
 > designed throughout (median loss −1.00 R, p95 win ≈ +2.0 R; only gap
-> outliers beyond ±3 R on gold). Next levers: session killzones, trailing,
+> outliers beyond ±3 R on gold). **Research priority: forex majors first**
+> (EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD, USDCAD, NZDUSD); XAUUSD is parked
+> as a secondary experiment. Next levers: session killzones, trailing,
 > bias strength/lookback grids, per-symbol deployment.
 
 ---
@@ -58,6 +60,31 @@ just closed* — i.e. the sweep happened on that bar itself, or on the bar
 immediately before it and the pattern printed after the sweep. There is no
 pending-setup state: if the confirmation doesn't print in time, the setup is
 simply gone. One position at a time per symbol + magic.
+
+## Trade Lifecycle at a Glance
+
+1. **Pool** — most recent confirmed M15 fractal swing high/low = resting-stop liquidity.
+2. **Sweep** — closed bar wicks through the pool, closes back inside (stop hunt, no acceptance).
+3. **Confirm** — the sweep bar itself or the next closed bar prints a pin bar or engulfing bar in the reversal direction (next-bar confirm must hold the sweep extreme and close back inside the pool).
+4. **Gates** — H4 structure bias must agree; spread ≤ `MaxSpreadPips`; optional session window.
+5. **Entry** — market order at the open of the next M15 bar; size = `RiskPercent` of equity ÷ stop distance.
+6. **Exit** — fixed TP at `RewardRR` × risk and the SL below; nothing discretionary.
+
+**Why these exits:** with wins paying 2 R the break-even win rate is 33.3 % —
+every filter exists to push the win rate above that. There is no partial exit,
+no manual break-even move and no trailing by default (KISS: results stay
+attributable); trailing and a time-stop exist as optimizer levers.
+
+### Worked example (real journal trade — EURUSD 2024.03.26)
+
+```
+00:15  sweep: low 1.08310 < swing low 1.08333, close back above   (sell-side sweep)
+00:30  bull pin confirms on the next bar, holds 1.08310
+00:45  >>> BUY 0.97 | SL 1.08312 | TP 1.08503 | risk 6.4 pips | bull pin
+        entry ask 1.08376 · SL = sweep extreme 1.08310 + 0.25×ATR buffer → 6.4 pips
+        TP = 1.08376 + 2 × 6.4 pips = 1.08503 · size = 1 % equity ÷ stop = 0.97 lots
+09:30  TP hit → position CLOSED - net +1.82R / +116.39 USD
+```
 
 ## Rule Definitions (exact)
 
