@@ -78,6 +78,32 @@ stays four rules deep.
 > the same journal that motivated it. Required next step: out-of-sample
 > walk-forward (2018–2022) before calling it an edge.
 >
+> **Spread review (v1.06, EURUSD pins+killzone, same window, Δ=0.1 unless
+> noted)** — one-factor sweeps around the reference plus combos:
+>
+> | Config | Δ | Gate | Floor | Trades | Win % | PF(R) | sumR | Final |
+> |---|---|---|---|---|---|---|---|---|
+> | reference | 0.1 | 1.5 | 15 % | 436 | 37.2 % | 1.15 | +41 R | $14,329 |
+> | floor 10 % | 0.1 | 1.5 | 10 % | 430 | 37.4 % | 1.16 | +43 R | $14,735 |
+> | floor 20 % | 0.1 | 1.5 | 20 % | 439 | 37.1 % | 1.14 | +40 R | $14,278 |
+> | gate 1.0 | 0.1 | 1.0 | 15 % | 407 | 38.1 % | 1.19 | +49 R | $15,624 |
+> | gate 2.5 | 0.1 | 2.5 | 15 % | 476 | 36.6 % | 1.12 | +36 R | $13,691 |
+> | Δ 0.5 | 0.5 | 1.5 | 15 % | 405 | 40.7 % | 1.24 | +58 R | $17,147 |
+> | Δ 1.0 | 1.0 | 1.5 | 15 % | 361 | 41.8 % | 1.23 | +48 R | $15,593 |
+> | **gate 1.0 + Δ 0.5** | 0.5 | 1.0 | 15 % | **374** | **41.4 %** | **1.27** | **+61 R** | **$17,697** |
+> | floor 10 + gate 1.0 + Δ 0.5 | 0.5 | 1.0 | 10 % | 365 | 40.3 % | 1.23 | +51 R | $15,966 |
+>
+> Read-out: (1) the floor is **insensitive** across 10–20 % — keep the 15 %
+> default; (2) the gate is **monotonic** — tighter is better (wide-spread
+> entries drag); (3) a higher modeled Δ keeps improving results via wider
+> forced stops, peaking at Δ≈0.5 here — i.e. the strategy *likes* wide stops,
+> and the spread floor is effectively a stop-quality mechanism. Best spread
+> posture: **gate 1.0 + Δ per account + floor 15 %**. **Data caveat:** the
+> remote broker demo's downloadable tick archive only covers 2026.04+, so the
+> 2023–25 runs executed on M1-synthesized ticks (volume-faithful, intra-bar
+> path approximated); re-validate the final config on true recorded ticks
+> before deployment.
+>
 > **FX majors sweep (v1.03 baseline, same window, remote real ticks):**
 >
 > | Pair | Trades | Win % | PF(R) | sumR | Final balance | Note |
