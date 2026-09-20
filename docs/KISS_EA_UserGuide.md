@@ -1,6 +1,6 @@
 # KISS EA — SMC/ICT Liquidity Sweep + Pin/Engulfing Entry
 
-**M15 Expert Advisor for MetaTrader 5** · Version 1.06
+**M15 Expert Advisor for MetaTrader 5** · Version 1.07
 
 KISS ("Keep It Simple, Stupid") is a minimal **Smart Money Concepts (SMC) /
 Inner Circle Trader (ICT)-style** strategy: it hunts **liquidity sweeps** of the
@@ -228,7 +228,7 @@ Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 
 | Filter | Default | Behaviour |
 |---|---|---|
-| **HTF structure bias** (`UseBiasFilter`) | **on** | **H4 fractal market structure** (no indicators): the most recent *confirmed* H4 swing event decides the regime — a swing high that made a **HH**, or a swing low that held as a **HL**, is **bullish**; a swing high that made a **LH** (or failed to exceed the prior high — "leaving the HH"), or a swing low that broke down (**LL**), is **bearish**. Longs only in bullish structure, shorts only in bearish. A fresh event flips the bias as soon as it is confirmed (`BiasSwingStrength` H4 bars have closed past it — no repaint). |
+| **D1 structure + PDH/PDL position** (`UseBiasFilter`) | **on** | No indicators — pure daily swing structure. With `SH1/SH2` = last/previous confirmed D1 swing high and `SL1/SL2` = last/previous D1 swing low, price partitions into eight named states: high side `CREATING_HH` (P>SH1, SH1>SH2) / `AWAY_FROM_HL` (P>SH1, SH1<SH2 — escaped the lower high) / `AWAY_FROM_HH` (P<SH1, SH1>SH2 — rejected under the HH) / `CREATING_HL` (P<SH1, SH1<SH2 — lower highs forming); low side `CREATING_LH` (P>SL1, SL1>SL2 — higher low holds) / `AWAY_FROM_LL` (P>SL1, SL1<SL2 — left the lows behind) / `AWAY_FROM_LH` (P<SL1, SL1>SL2 — lost the higher low) / `CREATING_LL` (P<SL1, SL1<SL2). **Regime: bullish above both anchors, bearish below both, otherwise the previous regime holds.** The intraday **position** uses PDH/PDL: `ABOVE_PDH` bullish, `BELOW_PDL` bearish, inside the day's range defers to D1. Gate: longs need a bullish regime and are vetoed **below PDL**; shorts need a bearish regime and are vetoed **above PDH**. Every state change is logged (`D1 STRUCTURE:` / `D1 POSITION LEVELS:` lines) and stamped on entries. |
 | **Session window** (`UseSessionFilter`) | off | Restrict entries to `[SessStartHour, SessEndHour)` **broker server time** (ICT killzone analog). Wraps midnight if start > end. Server-time offset is broker-dependent — verify before use. |
 | **ATR trailing** (`UseTrailing`) | off | Activates at `TrailActivateRR` × initial risk, then trails `TrailATRMult` × ATR behind price (ratchet only; TP is preserved). |
 | **Time stop** (`MaxBarsInTrade`) | 0 = off | Force-close after N entry-TF bars in trade. |
@@ -244,8 +244,8 @@ Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 | `InpUseEngulfing` | `true` | Enable engulfing confirmation. |
 | `InpPinWickRatio` | `2.0` | Pin: rejection wick ≥ ratio × body. |
 | `InpMinRangeATR` | `0.5` | Min confirm-candle range in ATRs (noise gate; 0 disables). |
-| `InpUseBiasFilter` | `true` | Higher-TF structure bias gate (see table above). |
-| `InpBiasTF` | `H4` | Bias timeframe (fractal market structure). |
+| `InpUseBiasFilter` | `true` | D1 structure regime + PDH/PDL position gate (see table above). |
+| `InpBiasTF` | `D1` | Structure timeframe (daily swings). |
 | `InpBiasSwingStrength` | `2` | Bias fractal strength (bars each side of an H4 pivot). |
 | `InpBiasLookback` | `120` | Bars scanned for bias pivots (~20 days of H4). |
 | `InpUseSessionFilter` | `false` | Restrict entries to the session window. |
@@ -281,7 +281,7 @@ The SL/TP math is ATR-based, so it scales across symbols automatically; only
 
 For headless backtest parsing the EA logs:
 
-- entries: `>>> BUY 0.12 | SL … | TP … | risk 12.3 pips | sell-side sweep of swing 1.08321 @ 2024.03.05 10:15 | bull pin`
+- entries: `>>> BUY 0.12 | SL … | TP … | risk 12.3 pips | sell-side sweep of swing 1.08321 @ 2024.03.05 10:15 | bull pin | adj 0.1p | D1:BULL/CREATING_HH+CREATING_LH | POS:ABOVE_PDH`
 - SL widened by a floor: `SL widened to floor: 2.2 -> 6.7 pips (modeled spread 1.0 pips / 15% min SL)`
 - per-trade: `position #N CLOSED - net +1.87R / 43.10 USD`
 - rejections: `ENTRY ABORTED: spread …` / `ENTRY ABORTED: outside session …` /
