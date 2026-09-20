@@ -1,6 +1,6 @@
 # KISS EA — SMC/ICT Liquidity Sweep + Pin/Engulfing Entry
 
-**M15 Expert Advisor for MetaTrader 5** · Version 1.04
+**M15 Expert Advisor for MetaTrader 5** · Version 1.05
 
 KISS ("Keep It Simple, Stupid") is a minimal **Smart Money Concepts (SMC) /
 Inner Circle Trader (ICT)-style** strategy: it hunts **liquidity sweeps** of the
@@ -36,7 +36,7 @@ stays four rules deep.
 >
 > **Spread realism (v1.04, EURUSD, same window):** the tester fills use the
 > raw demo feed (0.28 pips avg + commission), so `InpSpreadAdjustPips` models
-> other account types — the adjustment enters the spread gate, the 15 %
+> other account types — the adjustment enters the spread gate, the SL-coverage floor, widens the SL and pulls the TP closer
 > floor, widens the SL and pulls the TP closer:
 >
 > | Δ (adj) | ≈ account | Trades | Win % | PF(R) | sumR | Final |
@@ -48,7 +48,7 @@ stays four rules deep.
 > | 1.50 | ≥ 2.5 pip account | 0 | — | — | 0 | $10,000 (all gated; raise `MaxSpreadPips`) |
 >
 > Two effects, both mechanical: a larger Δ (a) gates out wide-spread ticks
-> (the gate uses the modeled spread) and (b) forces wider stops via the 15 %
+> (the gate uses the modeled spread) and (b) forces wider stops via the SL-coverage floor
 > floor — fewer, longer, cleaner trades with a higher win rate. The Δ=1.00
 > row is nominally profitable but is **one symbol, one window, in-sample**,
 > and the improvement comes from stop width, not a discovered edge. Note:
@@ -187,8 +187,10 @@ structure is respected but cost floors always dominate when they are wider:
    confirm bar, whichever is further out) plus `SLBufferATRMult` × ATR;
 2. *ATR floor*: `MinStopATRMult` × ATR — guards the position size from exploding
    on degenerate sweep wicks hugging the entry;
-3. *Spread floor*: the spread must stay ≤ `MaxSpreadToSLPct` % of the SL
-   distance (default 15 %) — i.e. `spread / SL distance × 100 % ≤ 15 %`. This is
+3. *Spread floor*: the SL must be at least `MinStopSpreadMult` × the modeled
+   spread (default **6.67×**, i.e. the spread can be at most ~15 % of the SL
+   distance). Equivalent views of one rule — the stop is guaranteed a minimum
+   size relative to the spread so the target can't be eaten by costs. This is
    **not an entry gate**: the stop is simply **widened** so the spread cost
    stays a bounded fraction of the risk (0 disables the floor).
 
@@ -225,8 +227,8 @@ Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 | `InpATRPeriod` | `14` | ATR period on the entry TF (SL buffer, trailing). |
 | `InpSLBufferATRMult` | `0.25` | SL buffer beyond the sweep extreme (× ATR). |
 | `InpMinStopATRMult` | `1.0` | SL distance floor (× ATR); widens stops that the sweep wick made too tight. |
-| `InpMaxSpreadToSLPct` | `15.0` | Max spread as % of SL distance; widens the SL when needed (0 = off). Not an entry gate. Uses the *modeled* spread. |
-| `InpSpreadAdjustPips` | `0.0` | Modeled spread adjustment (pips) for non-raw accounts: the spread gate, the 15 % floor, the SL (+) and the TP (−) all use `tick spread + adjustment`. Δ=0 reproduces the raw-feed result exactly. Pick Δ ≈ *your typical spread* − *raw-feed spread (~0.3 on majors)* − *commission you no longer pay (~0.7 pip-equiv)*. |
+| `InpMinStopSpreadMult` | `6.67` | Min SL distance as a multiple of the modeled spread (SL ≥ 6.67 × spread ⇒ spread ≤ ~15 % of SL); widens the SL when needed (0 = off). Not an entry gate. Uses the *modeled* spread. |
+| `InpSpreadAdjustPips` | `0.0` | Modeled spread adjustment (pips) for non-raw accounts: the spread gate, the SL-coverage floor, the SL (+) and the TP (−) all use `tick spread + adjustment`. Δ=0 reproduces the raw-feed result exactly. Pick Δ ≈ *your typical spread* − *raw-feed spread (~0.3 on majors)* − *commission you no longer pay (~0.7 pip-equiv)*. |
 | `InpRewardRR` | `2.0` | TP distance = reward:risk multiple. |
 | `InpRiskPercent` | `1.0` | Risk % of equity per trade (0 = fixed lots). |
 | `InpFixedLots` | `0.10` | Fixed lots when `RiskPercent = 0`. |
@@ -254,7 +256,7 @@ The SL/TP math is ATR-based, so it scales across symbols automatically; only
 For headless backtest parsing the EA logs:
 
 - entries: `>>> BUY 0.12 | SL … | TP … | risk 12.3 pips | sell-side sweep of swing 1.08321 @ 2024.03.05 10:15 | bull pin`
-- SL widened by a floor: `SL widened to floor: 2.2 -> 6.7 pips (spread 1.0 pips = 15% of SL)`
+- SL widened by a floor: `SL widened to floor: 2.2 -> 6.7 pips (modeled spread 1.0 pips x 6.67 min multiple)`
 - per-trade: `position #N CLOSED - net +1.87R / 43.10 USD`
 - rejections: `ENTRY ABORTED: spread …` / `ENTRY ABORTED: outside session …` /
   `ENTRY ABORTED: long against PERIOD_H4 structure bias (LL 1.07430 @ 2024.02.27 12:00)` /
