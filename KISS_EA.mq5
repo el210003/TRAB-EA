@@ -19,7 +19,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "KISS"
 #property link        ""
-#property version     "1.05"
+#property version     "1.06"
 #property description "SMC/ICT liquidity sweep + pin bar / engulfing confirmation, M15 entry"
 #include <Trade\Trade.mqh>
 
@@ -45,7 +45,7 @@ input group "=== Risk & Exit ==="
 input int    InpATRPeriod             = 14;          // ATR period (entry TF)
 input double InpSLBufferATRMult       = 0.25;        // SL buffer beyond sweep extreme = x ATR
 input double InpMinStopATRMult        = 1.0;         // Min SL distance floor = x ATR (guards tiny sweep wicks)
-input double InpMinStopSpreadMult     = 6.67;        // Min SL distance = this x modeled spread (6.67 = spread <= 15% of SL; 0 = off)
+input double InpMinSpreadToSLPct      = 15.0;        // Min SL vs spread: spread may take at most this % of SL (SL >= spread/pct; 0 = off)
 input double InpSpreadAdjustPips      = 0.0;         // Modeled spread ADJUSTMENT (pips) for non-raw accounts
 input double InpRewardRR              = 2.0;         // Take profit = x risk (RR)
 input double InpRiskPercent           = 1.0;         // Risk % equity (0 = fixed lots)
@@ -90,7 +90,7 @@ int OnInit()
       InpBiasSwingStrength < 1 || InpBiasLookback < 2 * InpBiasSwingStrength + 4 ||
       InpATRPeriod <= 0 || InpRewardRR <= 0.0 || InpRiskPercent < 0.0 || InpFixedLots <= 0.0 ||
       InpSLBufferATRMult < 0.0 || InpMinStopATRMult < 0.0 || InpPinWickRatio <= 0.0 || InpMinRangeATR < 0.0 ||
-      InpMinStopSpreadMult < 0.0 || InpSpreadAdjustPips < 0.0 ||
+      InpMinSpreadToSLPct < 0.0 || InpSpreadAdjustPips < 0.0 ||
       InpMaxSpreadPips <= 0.0 ||
       InpTrailActivateRR <= 0.0 || InpTrailATRMult <= 0.0 || InpMaxBarsInTrade < 0)
      { Log("INIT FAILED: invalid inputs"); return INIT_PARAMETERS_INCORRECT; }
@@ -103,10 +103,10 @@ int OnInit()
      { Log("INIT FAILED: handles"); return INIT_FAILED; }
    g_trade.SetExpertMagicNumber((ulong)InpMagic);
    g_trade.LogLevel(LOG_LEVEL_ERRORS);
-   Log(StringFormat("initialized | %s sweep + pin/engulf @ %s | swing %d, lookback %d | bias %s struct(sw%d, lb%d) %s | SL buf %.2f ATR (floor %.1f ATR, SL>=%.2fx modeled spread, adj %.2fp), TP %.1fR | trail %s",
+   Log(StringFormat("initialized | %s sweep + pin/engulf @ %s | swing %d, lookback %d | bias %s struct(sw%d, lb%d) %s | SL buf %.2f ATR (floor %.1f ATR, min SL = spread/%.0f%%, adj %.2fp), TP %.1fR | trail %s",
                     EnumToString(InpEntryTF), _Symbol, InpSwingStrength, InpSweepLookback,
                     EnumToString(InpBiasTF), InpBiasSwingStrength, InpBiasLookback, InpUseBiasFilter ? "ON" : "off",
-                    InpSLBufferATRMult, InpMinStopATRMult, InpMinStopSpreadMult, InpSpreadAdjustPips, InpRewardRR, InpUseTrailing ? "on" : "off"));
+                    InpSLBufferATRMult, InpMinStopATRMult, InpMinSpreadToSLPct, InpSpreadAdjustPips, InpRewardRR, InpUseTrailing ? "on" : "off"));
    Adopt();
    return INIT_SUCCEEDED;
   }
@@ -316,11 +316,11 @@ void TryEnter(const int dir, const double sweepLevel, const double extreme, cons
    //   spread floor - spread must stay <= MaxSpreadToSLPct % of the SL distance (NOT an entry gate:
    //                  the stop is widened so the spread cost stays a bounded fraction of the risk)
    const double atrFloor    = InpMinStopATRMult * atr[0];
-   const double spreadFloor = (InpMinStopSpreadMult > 0.0) ? modeledSpread * InpMinStopSpreadMult : 0.0;
+   const double spreadFloor = (InpMinSpreadToSLPct > 0.0) ? modeledSpread * 100.0 / InpMinSpreadToSLPct : 0.0;
    const double minDist = MathMax(atrFloor, spreadFloor);
    if(risk < minDist)
      { Log(StringFormat("SL widened to floor: %.1f -> %.1f pips (%s)", risk / g_pip, minDist / g_pip,
-                        spreadFloor > atrFloor ? StringFormat("modeled spread %.1f pips x %.2f min multiple", spread, InpMinStopSpreadMult) : "ATR floor"));
+                        spreadFloor > atrFloor ? StringFormat("modeled spread %.1f pips / %.0f%% min SL", spread, InpMinSpreadToSLPct) : "ATR floor"));
        sl = (dir > 0) ? entry - minDist : entry + minDist; risk = minDist; }
    // spread adjustment as a real cost: the loss side pays it (wider SL), the win side pays it (closer TP)
    const double tpDist = InpRewardRR * risk - adjust;
@@ -457,7 +457,7 @@ void Panel()
      }
    string sess = "off";
    if(InpUseSessionFilter) sess = InSession(TimeCurrent()) ? "OPEN" : "closed";
-   string s = "KISS-EA v1.05 | " + _Symbol + " " + EnumToString(InpEntryTF) + " SMC sweep\n";
+   string s = "KISS-EA v1.06 | " + _Symbol + " " + EnumToString(InpEntryTF) + " SMC sweep\n";
    s += StringFormat("Liquidity: swing high %s | swing low %s\n",
                      swHi > 0.0 ? DoubleToString(swHi, g_digits) : "-", swLo > 0.0 ? DoubleToString(swLo, g_digits) : "-");
    s += StringFormat("Bias: %s | Session: %s | Pos: %s\n", bias, sess, g_ticket != 0 ? "OPEN" : "flat");

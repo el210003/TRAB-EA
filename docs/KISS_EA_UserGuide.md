@@ -1,6 +1,6 @@
 # KISS EA — SMC/ICT Liquidity Sweep + Pin/Engulfing Entry
 
-**M15 Expert Advisor for MetaTrader 5** · Version 1.05
+**M15 Expert Advisor for MetaTrader 5** · Version 1.06
 
 KISS ("Keep It Simple, Stupid") is a minimal **Smart Money Concepts (SMC) /
 Inner Circle Trader (ICT)-style** strategy: it hunts **liquidity sweeps** of the
@@ -187,10 +187,10 @@ structure is respected but cost floors always dominate when they are wider:
    confirm bar, whichever is further out) plus `SLBufferATRMult` × ATR;
 2. *ATR floor*: `MinStopATRMult` × ATR — guards the position size from exploding
    on degenerate sweep wicks hugging the entry;
-3. *Spread floor*: the SL must be at least `MinStopSpreadMult` × the modeled
-   spread (default **6.67×**, i.e. the spread can be at most ~15 % of the SL
-   distance). Equivalent views of one rule — the stop is guaranteed a minimum
-   size relative to the spread so the target can't be eaten by costs. This is
+3. *Spread floor* (`MinSpreadToSLPct`, default **15 %**): the spread may consume
+   at most this percentage of the SL distance — equivalently the SL is
+   guaranteed a minimum of `spread / pct` (1 pip spread → SL ≥ 6.7 pips), so
+   the 2R profit cannot be eaten by spread beyond the chosen bound. This is
    **not an entry gate**: the stop is simply **widened** so the spread cost
    stays a bounded fraction of the risk (0 disables the floor).
 
@@ -227,7 +227,7 @@ Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 | `InpATRPeriod` | `14` | ATR period on the entry TF (SL buffer, trailing). |
 | `InpSLBufferATRMult` | `0.25` | SL buffer beyond the sweep extreme (× ATR). |
 | `InpMinStopATRMult` | `1.0` | SL distance floor (× ATR); widens stops that the sweep wick made too tight. |
-| `InpMinStopSpreadMult` | `6.67` | Min SL distance as a multiple of the modeled spread (SL ≥ 6.67 × spread ⇒ spread ≤ ~15 % of SL); widens the SL when needed (0 = off). Not an entry gate. Uses the *modeled* spread. |
+| `InpMinSpreadToSLPct` | `15.0` | Min SL vs spread: the spread may take at most this % of the SL distance (SL ≥ spread/pct; 1 pip spread → SL ≥ 6.7 pips); widens the SL when needed (0 = off). Not an entry gate. Uses the *modeled* spread. |
 | `InpSpreadAdjustPips` | `0.0` | Modeled spread adjustment (pips) for non-raw accounts: the spread gate, the SL-coverage floor, the SL (+) and the TP (−) all use `tick spread + adjustment`. Δ=0 reproduces the raw-feed result exactly. Pick Δ ≈ *your typical spread* − *raw-feed spread (~0.3 on majors)* − *commission you no longer pay (~0.7 pip-equiv)*. |
 | `InpRewardRR` | `2.0` | TP distance = reward:risk multiple. |
 | `InpRiskPercent` | `1.0` | Risk % of equity per trade (0 = fixed lots). |
@@ -256,7 +256,7 @@ The SL/TP math is ATR-based, so it scales across symbols automatically; only
 For headless backtest parsing the EA logs:
 
 - entries: `>>> BUY 0.12 | SL … | TP … | risk 12.3 pips | sell-side sweep of swing 1.08321 @ 2024.03.05 10:15 | bull pin`
-- SL widened by a floor: `SL widened to floor: 2.2 -> 6.7 pips (modeled spread 1.0 pips x 6.67 min multiple)`
+- SL widened by a floor: `SL widened to floor: 2.2 -> 6.7 pips (modeled spread 1.0 pips / 15% min SL)`
 - per-trade: `position #N CLOSED - net +1.87R / 43.10 USD`
 - rejections: `ENTRY ABORTED: spread …` / `ENTRY ABORTED: outside session …` /
   `ENTRY ABORTED: long against PERIOD_H4 structure bias (LL 1.07430 @ 2024.02.27 12:00)` /
