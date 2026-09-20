@@ -33,6 +33,28 @@ stays four rules deep.
 > (EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD, USDCAD, NZDUSD); XAUUSD is parked
 > as a secondary experiment. Next levers: session killzones, trailing,
 > bias strength/lookback grids, per-symbol deployment.
+>
+> **FX majors sweep (v1.03 baseline, same window, remote real ticks):**
+>
+> | Pair | Trades | Win % | PF(R) | sumR | Final balance | Note |
+> |---|---|---|---|---|---|---|
+> | EURUSD | 1,023 | 31.0 % | 0.88 | −89 R | $3,677 | full 3y |
+> | GBPUSD | 1,308 | 29.2 % | 0.81 | −184 R | $1,460 | full 3y |
+> | USDJPY | 1,230 | 30.8 % | 0.90 | −89 R | $3,482 | full 3y (2024 +1.9 R) |
+> | USDCHF | 1,266 | 29.4 % | 0.78 | −205 R | $1,172 | full 3y |
+> | AUDUSD | 993 | 30.7 % | 0.83 | −125 R | $2,588 | full 3y |
+> | USDCAD | 419 | 34.6 % | 1.04 | +13 R | $10,862 | **2025 only** (broker archive starts 2025) |
+> | NZDUSD | 1,245 | 29.2 % | 0.79 | −197 R | $1,290 | full 3y |
+>
+> **Verdict: the sweep-reversal baseline has no edge on FX majors.** Win rates
+> cluster at 29–31 % vs the 33.3 % break-even at 1:2; losses are consistent
+> across years and pairs, not regime luck. Only USDCAD (2025-only data, thin
+> +13 R) is nominally positive — insufficient data to trust. This matches the
+> cost-wall thesis in [`RESEARCH.md`](RESEARCH.md): on M15-sized stops,
+> spread + commission + slippage consume ≈ 0.1–0.3 R per trade, and the entry
+> win rate never clears the hurdle. Any next iteration must change the
+> *economics* (killzone-only trading, wider structural stops, higher-RR
+> profiles), not re-tune the same entry.
 
 ---
 
