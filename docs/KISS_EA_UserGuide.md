@@ -1,6 +1,6 @@
 # KISS EA — SMC/ICT Liquidity Sweep + Pin/Engulfing Entry
 
-**M15 Expert Advisor for MetaTrader 5** · Version 1.03
+**M15 Expert Advisor for MetaTrader 5** · Version 1.04
 
 KISS ("Keep It Simple, Stupid") is a minimal **Smart Money Concepts (SMC) /
 Inner Circle Trader (ICT)-style** strategy: it hunts **liquidity sweeps** of the
@@ -33,6 +33,27 @@ stays four rules deep.
 > (EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD, USDCAD, NZDUSD); XAUUSD is parked
 > as a secondary experiment. Next levers: session killzones, trailing,
 > bias strength/lookback grids, per-symbol deployment.
+>
+> **Spread realism (v1.04, EURUSD, same window):** the tester fills use the
+> raw demo feed (0.28 pips avg + commission), so `InpSpreadAdjustPips` models
+> other account types — the adjustment enters the spread gate, the 15 %
+> floor, widens the SL and pulls the TP closer:
+>
+> | Δ (adj) | ≈ account | Trades | Win % | PF(R) | sumR | Final |
+> |---|---|---|---|---|---|---|
+> | 0.00 | raw feed (regression = v1.03) | 1,023 | 31.0 % | 0.88 | −89 R | $3,677 |
+> | 0.10 | IC Markets Standard (~1.1 pip, no comm) | 999 | 31.7 % | 0.89 | −77 R | $4,207 |
+> | 0.50 | ~1.6 pip standard account | 911 | 33.8 % | 0.91 | −55 R | $5,315 |
+> | 1.00 | ~2.0 pip standard account | 769 | 37.8 % | 1.03 | +16 R | $11,002 |
+> | 1.50 | ≥ 2.5 pip account | 0 | — | — | 0 | $10,000 (all gated; raise `MaxSpreadPips`) |
+>
+> Two effects, both mechanical: a larger Δ (a) gates out wide-spread ticks
+> (the gate uses the modeled spread) and (b) forces wider stops via the 15 %
+> floor — fewer, longer, cleaner trades with a higher win rate. The Δ=1.00
+> row is nominally profitable but is **one symbol, one window, in-sample**,
+> and the improvement comes from stop width, not a discovered edge. Note:
+> `MaxSpreadPips` gates the *modeled* spread — when raising Δ, raise the gate
+> accordingly or everything gets aborted (the Δ=1.50 row).
 >
 > **FX majors sweep (v1.03 baseline, same window, remote real ticks):**
 >
@@ -181,7 +202,8 @@ Sizing is `RiskPercent` of equity (0 = `FixedLots`).
 | `InpATRPeriod` | `14` | ATR period on the entry TF (SL buffer, trailing). |
 | `InpSLBufferATRMult` | `0.25` | SL buffer beyond the sweep extreme (× ATR). |
 | `InpMinStopATRMult` | `1.0` | SL distance floor (× ATR); widens stops that the sweep wick made too tight. |
-| `InpMaxSpreadToSLPct` | `15.0` | Max spread as % of SL distance; widens the SL when needed (0 = off). Not an entry gate. |
+| `InpMaxSpreadToSLPct` | `15.0` | Max spread as % of SL distance; widens the SL when needed (0 = off). Not an entry gate. Uses the *modeled* spread. |
+| `InpSpreadAdjustPips` | `0.0` | Modeled spread adjustment (pips) for non-raw accounts: the spread gate, the 15 % floor, the SL (+) and the TP (−) all use `tick spread + adjustment`. Δ=0 reproduces the raw-feed result exactly. Pick Δ ≈ *your typical spread* − *raw-feed spread (~0.3 on majors)* − *commission you no longer pay (~0.7 pip-equiv)*. |
 | `InpRewardRR` | `2.0` | TP distance = reward:risk multiple. |
 | `InpRiskPercent` | `1.0` | Risk % of equity per trade (0 = fixed lots). |
 | `InpFixedLots` | `0.10` | Fixed lots when `RiskPercent = 0`. |
