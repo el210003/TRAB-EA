@@ -55,6 +55,29 @@ stays four rules deep.
 > `MaxSpreadPips` gates the *modeled* spread — when raising Δ, raise the gate
 > accordingly or everything gets aborted (the Δ=1.50 row).
 >
+> **EURUSD focus experiments (v1.04, Δ=0.1, same window)** — variants driven
+> by the trade-journal findings (pins ≫ engulfings; killzones untested;
+> duration outliers):
+>
+> | Config | Trades | Win % | PF(R) | sumR | Final |
+> |---|---|---|---|---|---|
+> | baseline (ref) | 999 | 31.7 % | 0.89 | −77 R | $4,207 |
+> | pins only | 649 | 32.0 % | 0.91 | −42 R | $6,139 |
+> | killzone only (07–20h srv) | 691 | 35.0 % | 1.05 | +22 R | $11,566 |
+> | pins + killzone | **436** | **37.2 %** | **1.15** | **+41 R** | **$14,329** |
+> | pins + killzone + time-stop 96 | 444 | 36.9 % | 1.11 | +32 R | $13,113 |
+> | pins + time-stop | 661 | 32.1 % | 0.89 | −51 R | $5,662 |
+>
+> The **killzone session filter is the decisive lever** (every config gains
+> from it; it flips EURUSD positive), and pins-only adds further on top.
+> The time-stop does not help — dropped. Best config:
+> **pins + killzone = 436 trades, 37.2 % win at 1:2, PF 1.15, +41 R** with
+> two of three years positive (2024 −5 R is the residual weak spot).
+> **Caveats:** in-sample selection on one symbol/window, killzone hours are
+> *server* time (validate per broker), and the config family was chosen from
+> the same journal that motivated it. Required next step: out-of-sample
+> walk-forward (2018–2022) before calling it an edge.
+>
 > **FX majors sweep (v1.03 baseline, same window, remote real ticks):**
 >
 > | Pair | Trades | Win % | PF(R) | sumR | Final balance | Note |
