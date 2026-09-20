@@ -19,7 +19,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "KISS"
 #property link        ""
-#property version     "1.07"
+#property version     "1.08"
 #property description "SMC/ICT liquidity sweep + pin bar / engulfing confirmation, M15 entry"
 #include <Trade\Trade.mqh>
 
@@ -174,17 +174,17 @@ bool FindSwing(const MqlRates &r[], const int n, const int fromIdx, const bool w
 //| sticky (holds previous). Position vs PDH/PDL: ABOVE_PDH bull,     |
 //| BELOW_PDL bear, INSIDE defers to the D1 regime.                   |
 //+------------------------------------------------------------------+
-int D1Structure(string &states, string &pos, double &pdh, double &pdl)
+int D1Structure(string &states, string &pos, double &pdh, double &pdl, string &liq)
   {
    const int n = InpBiasLookback + 2 * InpBiasSwingStrength + 4;
    MqlRates r[]; ArraySetAsSeries(r, true);
-   if(CopyRates(_Symbol, InpBiasTF, 1, n, r) < n) { states = "history n/a"; pos = "n/a"; return g_d1Regime; }
+   if(CopyRates(_Symbol, InpBiasTF, 1, n, r) < n) { states = "history n/a"; pos = "n/a"; liq = "n/a"; return g_d1Regime; }
    int h1 = -1, h2 = -1, l1 = -1, l2 = -1;
    if(!FindSwing(r, n, 0, true, InpBiasSwingStrength, h1) ||
       !FindSwing(r, n, h1 + 1, true, InpBiasSwingStrength, h2) ||
       !FindSwing(r, n, 0, false, InpBiasSwingStrength, l1) ||
       !FindSwing(r, n, l1 + 1, false, InpBiasSwingStrength, l2))
-     { states = "history n/a"; pos = "n/a"; return g_d1Regime; }
+     { states = "history n/a"; pos = "n/a"; liq = "n/a"; return g_d1Regime; }
    const double SH1 = r[h1].high, SH2 = r[h2].high;
    const double SL1 = r[l1].low,  SL2 = r[l2].low;
    const double P = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -197,6 +197,8 @@ int D1Structure(string &states, string &pos, double &pdh, double &pdl)
    else if(SL1 <= SL2)  { ls = "AWAY_FROM_LL"; lsBull = true;  }
    else                 { ls = "CREATING_LH";  lsBull = true;  }
    states = hs + "+" + ls;
+   liq = StringFormat("SH1 %s SH2 %s SL1 %s SL2 %s", DoubleToString(SH1, g_digits),
+                      DoubleToString(SH2, g_digits), DoubleToString(SL1, g_digits), DoubleToString(SL2, g_digits));
    // regime: both anchors agree -> set; split -> sticky previous
    if(hsBull && lsBull) g_d1Regime = +1;
    else if(!hsBull && !lsBull) g_d1Regime = -1;
@@ -214,15 +216,15 @@ int D1Structure(string &states, string &pos, double &pdh, double &pdl)
 //+------------------------------------------------------------------+
 void LogStructureState()
   {
-   double pdh = 0.0, pdl = 0.0;
-   const int reg = D1Structure(g_d1States, g_posState, pdh, pdl);
-   const string tuple = StringFormat("%d|%s|%s|%.5f|%.5f", reg, g_d1States, g_posState, pdh, pdl);
+   double pdh = 0.0, pdl = 0.0; string liq = "";
+   const int reg = D1Structure(g_d1States, g_posState, pdh, pdl, liq);
+   const string tuple = StringFormat("%d|%s|%s|%.5f|%.5f|%s", reg, g_d1States, g_posState, pdh, pdl, liq);
    if(tuple == g_lastStateTuple) return;
    const bool dayRoll = (StringLen(g_lastStateTuple) > 0 && StringSubstr(tuple, StringLen(tuple) - 21, 10) != StringSubstr(g_lastStateTuple, StringLen(g_lastStateTuple) - 21, 10));
    g_lastStateTuple = tuple;
    if(dayRoll)
      Log(StringFormat("D1 POSITION LEVELS: PDH %s PDL %s", DoubleToString(pdh, g_digits), DoubleToString(pdl, g_digits)));
-   Log(StringFormat("D1 STRUCTURE: %s | states %s | pos %s", reg > 0 ? "BULLISH" : (reg < 0 ? "BEARISH" : "HOLD"), g_d1States, g_posState));
+   Log(StringFormat("D1 STRUCTURE: %s | states %s | pos %s | liq %s", reg > 0 ? "BULLISH" : (reg < 0 ? "BEARISH" : "HOLD"), g_d1States, g_posState, liq));
   }
 
 //+------------------------------------------------------------------+
@@ -334,8 +336,8 @@ void TryEnter(const int dir, const double sweepLevel, const double extreme, cons
        Log(StringFormat("ENTRY ABORTED: outside session %02d-%02dh (server hour %02d)", InpSessStartHour, InpSessEndHour, dt.hour)); return; }
    if(InpUseBiasFilter)
      {
-      double pdh = 0.0, pdl = 0.0;
-      const int reg = D1Structure(g_d1States, g_posState, pdh, pdl);
+      double pdh = 0.0, pdl = 0.0; string liq = "";
+      const int reg = D1Structure(g_d1States, g_posState, pdh, pdl, liq);
       // position veto: long blocked below PDL, short blocked above PDH; INSIDE defers to D1
       const bool longAllowed = (reg > 0) && (g_posState != "BELOW_PDL");
       const bool shortAllowed = (reg < 0) && (g_posState != "ABOVE_PDH");
@@ -493,15 +495,15 @@ void Panel()
    string bias = "off";
    if(InpUseBiasFilter)
      {
-      double pdhp = 0.0, pdlp = 0.0;
-      const int b = D1Structure(g_d1States, g_posState, pdhp, pdlp);
-      bias = StringFormat("%s [%s] POS:%s PDH:%s PDL:%s",
+      double pdhp = 0.0, pdlp = 0.0; string liq = "";
+      const int b = D1Structure(g_d1States, g_posState, pdhp, pdlp, liq);
+      bias = StringFormat("%s [%s] POS:%s PDH:%s PDL:%s LIQ:%s",
                           b > 0 ? "BULLISH" : (b < 0 ? "BEARISH" : "HOLD"), g_d1States, g_posState,
-                          DoubleToString(pdhp, g_digits), DoubleToString(pdlp, g_digits));
+                          DoubleToString(pdhp, g_digits), DoubleToString(pdlp, g_digits), liq);
      }
    string sess = "off";
    if(InpUseSessionFilter) sess = InSession(TimeCurrent()) ? "OPEN" : "closed";
-   string s = "KISS-EA v1.07 | " + _Symbol + " " + EnumToString(InpEntryTF) + " SMC sweep\n";
+   string s = "KISS-EA v1.08 | " + _Symbol + " " + EnumToString(InpEntryTF) + " SMC sweep\n";
    s += StringFormat("Liquidity: swing high %s | swing low %s\n",
                      swHi > 0.0 ? DoubleToString(swHi, g_digits) : "-", swLo > 0.0 ? DoubleToString(swLo, g_digits) : "-");
    s += StringFormat("Bias: %s | Session: %s | Pos: %s\n", bias, sess, g_ticket != 0 ? "OPEN" : "flat");

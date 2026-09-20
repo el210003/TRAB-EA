@@ -41,7 +41,7 @@ Exactly one high-side state and one low-side state are active at all times. Nota
 
 | Artefact | Content |
 |---|---|
-| BT journal, per M15 bar on change | `D1 STRUCTURE: BULLISH \| states CREATING_HH+CREATING_LH \| pos ABOVE_PDH` |
+| BT journal, per M15 bar on change | `D1 STRUCTURE: BULLISH \| states CREATING_HH+CREATING_LH \| pos ABOVE_PDH \| liq SH1 … SH2 … SL1 … SL2 …` (anchor prices included; a newly confirmed pivot logs even if the state names are unchanged) |
 | BT journal, at day roll | `D1 POSITION LEVELS: PDH … PDL …` |
 | Entry line echo | `… \| D1:BULL/CREATING_HH+CREATING_LH \| POS:ABOVE_PDH` |
 | Trade journal CSV (new runs) | columns `D1_State`, `Pos_State` per trade |
