@@ -16,6 +16,20 @@ repo, whether the original strategy or a research prototype.
   what they are.
 - `preset/*.set` holds MT5 input presets (baseline + optimizer grids).
 
+## Local working directory: use `E:\tmp` (protect the C: drive)
+
+The system **C: drive runs tight** — never let agent-created working files pile up there.
+
+- **All agent-created working files go to `E:\tmp\`**: tester INI working copies, downloaded/scp'd
+tester journals, decoded logs, trade journals/CSVs, analysis scripts, helper `.bat`/`.ps1` files,
+scratch of any kind. **Never** write bulk artifacts to C:, the home directory, or the repo.
+- Organize per campaign, e.g. `E:\tmp\<EA>_<campaign>\`; archive what is worth keeping into
+`E:\tmp\_archive_<date>\` and delete the rest when the analysis is done.
+- The **only** C: exception is the MT5 data folder itself — the tester writes its own
+`Tester\cache\`, `Tester\logs\` and agent mirrors there (that is MT5's, not ours; wipe after
+each campaign, see *Clean up local artifacts after testing* below).
+- The cleanup helper lives at `/e/tmp/clean.sh`.
+
 ## Build
 
 Compile with the MetaEditor CLI (no interactive IDE needed):
@@ -160,7 +174,8 @@ once):
 The Strategy Tester writes large transient artifacts to `<Data Folder>\Tester\cache\`
 (`.tst`, can be ~2 GB), `<Data Folder>\Tester\logs\`, and agent mirrors under
 `<MetaQuotes Data>\Tester\...\Agent-*\logs\`. **When the backtest + analysis is
-complete, wipe them** (C: tends to run tight). A helper is `bash /e/tmp/clean.sh`
+complete, wipe them** (C: tends to run tight; agent working files belong on `E:\tmp`, see
+*Local working directory* above). A helper is `bash /e/tmp/clean.sh`
 (removes cache `.tst`, tester logs, agent mirrors, per-test `.ini`; **keeps** the
 `bases\` history and the repo; refuses to run while MT5 is running). Only run it
 after you've extracted the numbers you need.
